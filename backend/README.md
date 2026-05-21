@@ -81,6 +81,31 @@ Flujo: Routes → Controllers → Repositories → Models (Sequelize) → Postgr
 | updated_at       | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP            |
 | responsible_user | INTEGER   | NOT NULL, FK users                             |
 
+### Orden de Trabajo
+
+| Campo               | Tipo      | Restricciones                                                                    |
+|---------------------|-----------|----------------------------------------------------------------------------------|
+| id_orden_trabajo    | INTEGER   | PRIMARY KEY, AUTO INCREMENT                                                      |
+| id_moto             | INTEGER   | NOT NULL, FK motos                                                               |
+| id_mecanico         | INTEGER   | NOT NULL, FK users (mecanico con rol empleado)                                   |
+| fecha_ingreso       | TIMESTAMP | NOT NULL                                                                         |
+| fecha_entrega       | TIMESTAMP | NULLABLE (se asigna automáticamente al cambiar a estado Entregado)              |
+| diagnostico         | TEXT      | NOT NULL                                                                         |
+| estado              | ENUM      | NOT NULL (Recepcion, Diagnostico, Cotizacion, Reparacion, Entregado)            |
+| valor_mano_obra     | DOUBLE    | NOT NULL, no negativo                                                            |
+| total               | DOUBLE    | NOT NULL, autocalculado (mano de obra + suma de subtotales de repuestos)         |
+| id_responsible_user | INTEGER   | NOT NULL, FK users (usuario del token)                                           |
+
+### Detalle de Orden
+
+| Campo            | Tipo      | Restricciones                                 |
+|------------------|-----------|-----------------------------------------------|
+| id_detalle_orden | INTEGER   | PRIMARY KEY, AUTO INCREMENT                   |
+| id_orden_trabajo | INTEGER   | NOT NULL, FK ordenes_trabajo (ON DELETE CASCADE)|
+| id_repuesto      | INTEGER   | NOT NULL, FK repuestos                        |
+| cantidad         | INTEGER   | NOT NULL, no negativo                         |
+| subtotal         | DOUBLE    | NOT NULL, autocalculado (precio * cantidad)   |
+
 
 ## Endpoints
 
@@ -118,6 +143,15 @@ Flujo: Routes → Controllers → Repositories → Models (Sequelize) → Postgr
 | POST   | /api/repuestos                | Crear repuesto (todos los campos obligatorios, referencia única, >=0, auto user) | Admin y Empleado       |
 | PUT    | /api/repuestos/:id            | Actualizar repuesto (todos los campos obligatorios, referencia única, >=0, auto user) | Admin y Empleado       |
 | DELETE | /api/repuestos/:id            | Eliminar repuesto (solo si no tiene relaciones con otras entidades)    | Admin y Empleado       |
+
+### Órdenes de Trabajo
+| Método | Ruta                          | Descripción                                                           | Permisos               |
+|--------|-------------------------------|-----------------------------------------------------------------------|------------------------|
+| GET    | /api/ordenes                  | Listar órdenes (paginado con `page`/`limit`, filtros `id_moto`, `id_mecanico`, `estado`) | Cualquier usuario activo|
+| GET    | /api/ordenes/:id              | Obtener orden individual por ID (incluye placa_moto, nombre_mecanico y detalle de repuestos) | Cualquier usuario activo|
+| POST   | /api/ordenes                  | Crear orden (valida mecánico empleado, stock de repuestos, descuenta stock, autocalcula total, transaccional) | Admin y Empleado       |
+| PUT    | /api/ordenes/:id              | Actualizar orden (sobrescribe detalles de repuestos devolviendo stock antiguo, no actualizable si está 'Entregado') | Admin y Empleado       |
+| DELETE | /api/ordenes/:id              | Eliminar orden (devuelve el stock de todos los repuestos asociados al inventario) | Solo Admin             |
 
 Swagger docs: http://localhost:3000/api-docs
 

@@ -48,6 +48,7 @@ module.exports = (sequelize, DataTypes) => {
   Moto.associate = (models) => {
     Moto.belongsTo(models.User, { foreignKey: 'id_propietario', as: 'propietario' });
     Moto.belongsTo(models.User, { foreignKey: 'responsible_user', as: 'responsable' });
+    Moto.hasMany(models.OrdenTrabajo, { foreignKey: 'id_moto', as: 'ordenesTrabajo' });
   };
 
   return Moto;

@@ -7,6 +7,7 @@ const userRoutes = require('./routes/userRoutes');
 const authRoutes = require('./routes/authRoutes');
 const motoRoutes = require('./routes/motoRoutes');
 const repuestoRoutes = require('./routes/repuestoRoutes');
+const ordenTrabajoRoutes = require('./routes/ordenTrabajoRoutes');
 const errorHandler = require('./middlewares/errorHandler');
 
 const app = express();
@@ -21,6 +22,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/motos', motoRoutes);
 app.use('/api/repuestos', repuestoRoutes);
+app.use('/api/ordenes', ordenTrabajoRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
