@@ -4,12 +4,28 @@ const config = require('../config/sequelize-config');
 const env = process.env.NODE_ENV || 'development';
 const dbConfig = config[env];
 
-const sequelize = new Sequelize(
-  dbConfig.database,
-  dbConfig.username,
-  dbConfig.password,
-  dbConfig
-);
+let sequelize;
+if (dbConfig.use_env_variable && process.env[dbConfig.use_env_variable]) {
+  sequelize = new Sequelize(process.env[dbConfig.use_env_variable], dbConfig);
+} else if (process.env.DATABASE_URL) {
+  sequelize = new Sequelize(process.env.DATABASE_URL, {
+    dialect: 'postgres',
+    logging: false,
+    dialectOptions: dbConfig.dialectOptions || {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false
+      }
+    }
+  });
+} else {
+  sequelize = new Sequelize(
+    dbConfig.database,
+    dbConfig.username,
+    dbConfig.password,
+    dbConfig
+  );
+}
 
 const User = require('./user')(sequelize, require('sequelize').DataTypes);
 const Moto = require('./moto')(sequelize, require('sequelize').DataTypes);
