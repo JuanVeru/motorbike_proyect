@@ -66,6 +66,20 @@ Flujo: Routes → Controllers → Repositories → Models (Sequelize) → Postgr
 | anio             | INTEGER   | NOT NULL                                       |
 | create_date      | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP            |
 
+### Repuesto
+
+| Campo            | Tipo      | Restricciones                                  |
+|------------------|-----------|------------------------------------------------|
+| id_repuesto      | INTEGER   | PRIMARY KEY, AUTO INCREMENT                    |
+| referencia       | VARCHAR   | NOT NULL, UNIQUE                               |
+| nombre           | VARCHAR   | NOT NULL                                       |
+| stock            | INTEGER   | NOT NULL                                       |
+| precio           | DOUBLE    | NOT NULL                                       |
+| created_at       | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP            |
+| updated_at       | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP            |
+| responsible_user | INTEGER   | NOT NULL, FK users                             |
+
+
 ## Endpoints
 
 ### Auth
@@ -88,11 +102,20 @@ Flujo: Routes → Controllers → Repositories → Models (Sequelize) → Postgr
 ### Motos
 | Método | Ruta                          | Descripción                                                           | Permisos               |
 |--------|-------------------------------|-----------------------------------------------------------------------|------------------------|
-| GET    | /api/motos                    | Listar motos (paginado con `page`, `limit` y filtros `placa`, `id_cliente`) | Cualquier usuario activo|
+| GET    | /api/motos                    | Listar motos (paginado con `page`, `limit` y filtros `placa`, `id_propietario`) | Cualquier usuario activo|
 | GET    | /api/motos/:id                | Obtener moto por ID                                                   | Cualquier usuario activo|
-| POST   | /api/motos                    | Crear moto (requiere anio, valida cliente existente)                   | Admin y Empleado       |
-| PUT    | /api/motos/:id                | Actualizar moto (id_cliente obligatorio, anio opcional, no create_date)| Admin y Empleado       |
+| POST   | /api/motos                    | Crear moto (requiere anio, valida propietario existente)                   | Admin y Empleado       |
+| PUT    | /api/motos/:id                | Actualizar moto (id_propietario obligatorio, anio opcional, no create_date)| Admin y Empleado       |
 | DELETE | /api/motos/:id                | Eliminar moto                                                         | Admin y Empleado       |
+
+### Repuestos
+| Método | Ruta                          | Descripción                                                           | Permisos               |
+|--------|-------------------------------|-----------------------------------------------------------------------|------------------------|
+| GET    | /api/repuestos                | Listar repuestos (paginado, filtros `referencia`, `nombre`. Retorna info básica) | Cualquier usuario activo|
+| GET    | /api/repuestos/:id            | Obtener repuesto por ID (retorna info básica: id_repuesto, referencia, nombre, stock, precio) | Cualquier usuario activo|
+| POST   | /api/repuestos                | Crear repuesto (todos los campos obligatorios, referencia única, >=0, auto user) | Admin y Empleado       |
+| PUT    | /api/repuestos/:id            | Actualizar repuesto (todos los campos obligatorios, referencia única, >=0, auto user) | Admin y Empleado       |
+| DELETE | /api/repuestos/:id            | Eliminar repuesto (solo si no tiene relaciones con otras entidades)    | Admin y Empleado       |
 
 Swagger docs: http://localhost:3000/api-docs
 

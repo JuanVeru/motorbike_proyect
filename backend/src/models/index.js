@@ -13,16 +13,19 @@ const sequelize = new Sequelize(
 
 const User = require('./user')(sequelize, require('sequelize').DataTypes);
 const Moto = require('./moto')(sequelize, require('sequelize').DataTypes);
+const Repuesto = require('./repuesto')(sequelize, require('sequelize').DataTypes);
 
 // Setup associations
-User.associate({ Moto });
+User.associate({ Moto, Repuesto });
 Moto.associate({ User });
+Repuesto.associate({ User });
 
 const db = {
   sequelize,
   Sequelize,
   User,
-  Moto
+  Moto,
+  Repuesto
 };
 
 module.exports = db;
