@@ -17,6 +17,8 @@ const seedAdmin = async () => {
     const admin = await User.create({
       nombre: 'Admin',
       correo: 'admin@motorbike.com',
+      cedula: '0000000000',
+      telefono: '0000000000',
       password: hashedPassword,
       rol: 'admin',
       is_active: true

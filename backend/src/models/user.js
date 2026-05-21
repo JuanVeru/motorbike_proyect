@@ -21,6 +21,15 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: true
+    },
+    cedula: {
+      type: DataTypes.STRING(50),
+      allowNull: false,
+      unique: true
+    },
+    telefono: {
+      type: DataTypes.STRING(20),
+      allowNull: false
     }
   }, {
     tableName: 'users',

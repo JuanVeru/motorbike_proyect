@@ -36,47 +36,121 @@ class UserController {
   }
 
   async create(req, res) {
-    const { nombre, correo, password, rol } = req.body;
+    const { nombre, correo, cedula, telefono, password, rol } = req.body;
+    const requestingUser = req.user;
 
-    if (!nombre || !correo || !password || !rol) {
-      return res.status(400).json({ error: 'nombre, correo, password y rol son obligatorios' });
+    // Validar presencia de todos los campos obligatorios
+    if (!nombre || !correo || !cedula || !telefono || !password || !rol) {
+      return res.status(400).json({ error: 'nombre, correo, cedula, telefono, password y rol son obligatorios' });
     }
 
+    // Validar que los campos de texto no estén vacíos o en blanco
+    if (typeof nombre !== 'string' || nombre.trim() === '') {
+      return res.status(400).json({ error: 'El campo nombre no puede estar vacío' });
+    }
+    if (typeof correo !== 'string' || correo.trim() === '') {
+      return res.status(400).json({ error: 'El campo correo no puede estar vacío' });
+    }
+    if (typeof cedula !== 'string' || cedula.trim() === '') {
+      return res.status(400).json({ error: 'El campo cedula no puede estar vacío' });
+    }
+    if (typeof telefono !== 'string' || telefono.trim() === '') {
+      return res.status(400).json({ error: 'El campo telefono no puede estar vacío' });
+    }
+    if (typeof password !== 'string' || password.trim() === '') {
+      return res.status(400).json({ error: 'El campo password no puede estar vacío' });
+    }
+
+    // Validar contraseña
     const passwordValidation = validatePassword(password);
     if (!passwordValidation.valid) {
       return res.status(400).json({ error: passwordValidation.error });
     }
 
-    if (!['empleado', 'cliente'].includes(rol)) {
-      return res.status(400).json({ error: 'Rol inválido. Solo se permite: empleado, cliente' });
+    // Control de acceso basado en rol del usuario que crea
+    if (requestingUser.rol === 'empleado') {
+      // Empleado solo puede crear clientes
+      if (rol !== 'cliente') {
+        return res.status(403).json({ error: 'Un empleado solo puede crear usuarios con rol cliente' });
+      }
+    } else if (requestingUser.rol === 'admin') {
+      // Admin puede crear empleados o clientes (no admins)
+      if (!['empleado', 'cliente'].includes(rol)) {
+        return res.status(400).json({ error: 'Rol inválido. Solo se permite: empleado, cliente' });
+      }
     }
 
-    const existing = await userRepository.findByEmail(correo);
-    if (existing) {
+    // Validar unicidad de correo
+    const existingByEmail = await userRepository.findByEmail(correo.trim());
+    if (existingByEmail) {
       return res.status(409).json({ error: 'El correo ya está registrado' });
     }
 
-    const user = await userRepository.create({ nombre, correo, password, rol, is_active: true });
+    // Validar unicidad de cédula
+    const existingByCedula = await userRepository.findByCedula(cedula.trim());
+    if (existingByCedula) {
+      return res.status(409).json({ error: 'La cédula ya está registrada' });
+    }
+
+    await userRepository.create({
+      nombre: nombre.trim(),
+      correo: correo.trim(),
+      cedula: cedula.trim(),
+      telefono: telefono.trim(),
+      password,
+      rol,
+      is_active: true
+    });
 
     res.status(201).json({ message: 'Usuario creado exitosamente' });
   }
 
   async update(req, res) {
-    const { nombre, correo, password } = req.body;
+    const { nombre, correo, cedula, telefono, password } = req.body;
     const { id } = req.params;
 
-    if (!nombre || !correo) {
-      return res.status(400).json({ error: 'nombre y correo son obligatorios' });
+    // Validar presencia de campos obligatorios
+    if (!nombre || !correo || !cedula || !telefono) {
+      return res.status(400).json({ error: 'nombre, correo, cedula y telefono son obligatorios' });
     }
 
-    const existing = await userRepository.findByEmail(correo);
-    if (existing && existing.id !== parseInt(id)) {
+    // Validar que los campos de texto no estén vacíos o en blanco
+    if (typeof nombre !== 'string' || nombre.trim() === '') {
+      return res.status(400).json({ error: 'El campo nombre no puede estar vacío' });
+    }
+    if (typeof correo !== 'string' || correo.trim() === '') {
+      return res.status(400).json({ error: 'El campo correo no puede estar vacío' });
+    }
+    if (typeof cedula !== 'string' || cedula.trim() === '') {
+      return res.status(400).json({ error: 'El campo cedula no puede estar vacío' });
+    }
+    if (typeof telefono !== 'string' || telefono.trim() === '') {
+      return res.status(400).json({ error: 'El campo telefono no puede estar vacío' });
+    }
+
+    // Validar si existe el usuario
+    const user = await userRepository.findById(id);
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    // Validar unicidad de correo (excluyendo el usuario actual)
+    const existingByEmail = await userRepository.findByEmail(correo.trim());
+    if (existingByEmail && existingByEmail.id !== parseInt(id)) {
       return res.status(409).json({ error: 'El correo ya está registrado' });
     }
 
-    const user = await userRepository.findById(id);
-    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
-    await userRepository.update(id, { nombre, correo, password });
+    // Validar unicidad de cédula (excluyendo el usuario actual)
+    const existingByCedula = await userRepository.findByCedula(cedula.trim());
+    if (existingByCedula && existingByCedula.id !== parseInt(id)) {
+      return res.status(409).json({ error: 'La cédula ya está registrada' });
+    }
+
+    await userRepository.update(id, {
+      nombre: nombre.trim(),
+      correo: correo.trim(),
+      cedula: cedula.trim(),
+      telefono: telefono.trim(),
+      password
+    });
     res.json({ message: 'Usuario actualizado exitosamente' });
   }
 
@@ -97,7 +171,13 @@ class UserController {
       return res.status(403).json({ error: 'No se puede activar/desactivar usuarios con rol admin' });
     }
 
-    await userRepository.update(id, { nombre: user.nombre, correo: user.correo, is_active: !user.is_active });
+    await userRepository.update(id, {
+      nombre: user.nombre,
+      correo: user.correo,
+      cedula: user.cedula,
+      telefono: user.telefono,
+      is_active: !user.is_active
+    });
     res.json({ message: `Usuario ${user.is_active ? 'desactivado' : 'activado'} exitosamente` });
   }
 
@@ -129,7 +209,13 @@ class UserController {
       return res.status(400).json({ error: 'La nueva contraseña no puede ser igual a la actual' });
     }
 
-    await userRepository.update(userId, { nombre: user.nombre, correo: user.correo, password: newPassword });
+    await userRepository.update(userId, {
+      nombre: user.nombre,
+      correo: user.correo,
+      cedula: user.cedula,
+      telefono: user.telefono,
+      password: newPassword
+    });
     res.json({ message: 'Contraseña actualizada exitosamente' });
   }
 
@@ -155,7 +241,13 @@ class UserController {
       return res.status(403).json({ error: 'No se puede cambiar la contraseña de usuarios admin' });
     }
 
-    await userRepository.update(id, { nombre: user.nombre, correo: user.correo, password: newPassword });
+    await userRepository.update(id, {
+      nombre: user.nombre,
+      correo: user.correo,
+      cedula: user.cedula,
+      telefono: user.telefono,
+      password: newPassword
+    });
     res.json({ message: 'Contraseña reseteada exitosamente' });
   }
 }

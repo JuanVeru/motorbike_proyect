@@ -28,14 +28,16 @@ Flujo: Routes → Controllers → Repositories → Models (Sequelize) → Postgr
 
 ### User
 
-| Campo     | Tipo      | Restricciones              |
-|-----------|-----------|----------------------------|
-| id        | INTEGER   | PRIMARY KEY, AUTO INCREMENT|
-| nombre    | VARCHAR   | NOT NULL                   |
-| correo    | VARCHAR   | NOT NULL, UNIQUE           |
-| password  | VARCHAR   | NOT NULL                   |
+| Campo     | Tipo      | Restricciones                       |
+|-----------|-----------|-------------------------------------|
+| id        | INTEGER   | PRIMARY KEY, AUTO INCREMENT         |
+| nombre    | VARCHAR   | NOT NULL                            |
+| correo    | VARCHAR   | NOT NULL, UNIQUE                    |
+| cedula    | VARCHAR   | NOT NULL, UNIQUE                    |
+| telefono  | VARCHAR   | NOT NULL                            |
+| password  | VARCHAR   | NOT NULL                            |
 | rol       | ENUM      | NOT NULL (admin, empleado, cliente) |
-| is_active | BOOLEAN   | NOT NULL, DEFAULT true     |
+| is_active | BOOLEAN   | NOT NULL, DEFAULT true              |
 
 ### Empleado
 
@@ -88,16 +90,16 @@ Flujo: Routes → Controllers → Repositories → Models (Sequelize) → Postgr
 | POST   | /api/auth/login   | Iniciar sesión      |
 
 ### Users
-| Método | Ruta                           | Descripción                              |
-|--------|-------------------------------|------------------------------------------|
-| GET    | /api/users                     | Listar todos los usuarios (paginado, usa `page` y `limit`) |
-| GET    | /api/users/:id                 | Obtener usuario por ID                   |
-| POST   | /api/users                     | Crear usuario (admin only)              |
-| PUT    | /api/users/:id                 | Actualizar usuario                       |
-| DELETE | /api/users/:id                 | Eliminar usuario                         |
-| PATCH  | /api/users/:id/toggle-active  | Activar/desactivar usuario (admin only)  |
-| PATCH  | /api/users/change-password     | Cambiar contraseña propia                |
-| PATCH  | /api/users/:id/reset-password  | Resetear contraseña (admin only)         |
+| Método | Ruta                           | Descripción                                                                | Permisos                    |
+|--------|--------------------------------|----------------------------------------------------------------------------|-----------------------------|
+| GET    | /api/users                     | Listar usuarios (paginado, `page`, `limit`, filtros `is_active`, `rol`). Incluye `cedula` y `telefono` | Cualquier usuario activo    |
+| GET    | /api/users/:id                 | Obtener usuario por ID. Incluye `cedula` y `telefono`                      | Cualquier usuario activo    |
+| POST   | /api/users                     | Crear usuario. Admin: puede crear `empleado` o `cliente`. Empleado: solo `cliente`. Requiere `cedula` y `telefono` | Admin y Empleado            |
+| PUT    | /api/users/:id                 | Actualizar usuario (nombre, correo, cedula, telefono obligatorios)         | Admin                       |
+| DELETE | /api/users/:id                 | Eliminar usuario                                                           | Admin                       |
+| PATCH  | /api/users/:id/toggle-active   | Activar/desactivar usuario (no aplica a admins)                            | Admin                       |
+| PATCH  | /api/users/change-password     | Cambiar contraseña propia                                                  | Cualquier usuario activo    |
+| PATCH  | /api/users/:id/reset-password  | Resetear contraseña de un usuario (no aplica a admins)                     | Admin                       |
 
 ### Motos
 | Método | Ruta                          | Descripción                                                           | Permisos               |

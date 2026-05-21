@@ -12,7 +12,7 @@ class UserRepository {
     }
     const options = {
       where,
-      attributes: ['id', 'nombre', 'correo', 'rol', 'is_active'],
+      attributes: ['id', 'nombre', 'correo', 'cedula', 'telefono', 'rol', 'is_active'],
       order: [['id', 'ASC']]
     };
 
@@ -32,7 +32,7 @@ class UserRepository {
 
   async findById(id) {
     const user = await User.findByPk(id, {
-      attributes: ['id', 'nombre', 'correo', 'rol', 'is_active']
+      attributes: ['id', 'nombre', 'correo', 'cedula', 'telefono', 'rol', 'is_active']
     });
     return user ? user.toJSON() : null;
   }
@@ -40,7 +40,15 @@ class UserRepository {
   async findByEmail(email) {
     const user = await User.findOne({
       where: { correo: email },
-      attributes: ['id', 'nombre', 'correo', 'rol', 'is_active']
+      attributes: ['id', 'nombre', 'correo', 'cedula', 'telefono', 'rol', 'is_active']
+    });
+    return user ? user.toJSON() : null;
+  }
+
+  async findByCedula(cedula) {
+    const user = await User.findOne({
+      where: { cedula },
+      attributes: ['id', 'nombre', 'correo', 'cedula', 'telefono', 'rol', 'is_active']
     });
     return user ? user.toJSON() : null;
   }
@@ -56,11 +64,13 @@ class UserRepository {
     return await bcrypt.compare(password, hashedPassword);
   }
 
-  async create({ nombre, correo, password, rol, is_active = true }) {
+  async create({ nombre, correo, cedula, telefono, password, rol, is_active = true }) {
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = await User.create({
       nombre,
       correo,
+      cedula,
+      telefono,
       password: hashedPassword,
       rol,
       is_active
@@ -68,8 +78,10 @@ class UserRepository {
     return user.toJSON();
   }
 
-  async update(id, { nombre, correo, password, is_active }) {
+  async update(id, { nombre, correo, cedula, telefono, password, is_active }) {
     const updateData = { nombre, correo };
+    if (cedula !== undefined) updateData.cedula = cedula;
+    if (telefono !== undefined) updateData.telefono = telefono;
     if (password) {
       updateData.password = await bcrypt.hash(password, 10);
     }
@@ -84,7 +96,7 @@ class UserRepository {
 
     if (user[0] === 0) return null;
     const updatedUser = await User.findByPk(id, {
-      attributes: ['id', 'nombre', 'correo', 'rol', 'is_active']
+      attributes: ['id', 'nombre', 'correo', 'cedula', 'telefono', 'rol', 'is_active']
     });
     return updatedUser ? updatedUser.toJSON() : null;
   }
