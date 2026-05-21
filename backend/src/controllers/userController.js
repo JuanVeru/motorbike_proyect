@@ -109,6 +109,7 @@ class UserController {
   async update(req, res) {
     const { nombre, correo, cedula, telefono, password } = req.body;
     const { id } = req.params;
+    const requestingUser = req.user;
 
     // Validar presencia de campos obligatorios
     if (!nombre || !correo || !cedula || !telefono) {
@@ -132,6 +133,11 @@ class UserController {
     // Validar si existe el usuario
     const user = await userRepository.findById(id);
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    // Control de acceso basado en el rol del solicitante
+    if (requestingUser.rol === 'empleado' && user.rol !== 'cliente') {
+      return res.status(403).json({ error: 'Un empleado solo puede actualizar usuarios con rol cliente' });
+    }
 
     // Validar unicidad de correo (excluyendo el usuario actual)
     const existingByEmail = await userRepository.findByEmail(correo.trim());

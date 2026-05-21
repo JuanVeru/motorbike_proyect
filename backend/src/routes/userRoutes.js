@@ -191,10 +191,13 @@ router.post('/', authMiddleware, requireRole(['admin', 'empleado']), (req, res) 
  * @swagger
  * /api/users/{id}:
  *   put:
- *     summary: Actualiza un usuario (solo Admin)
+ *     summary: Actualiza un usuario (Admin y Empleado)
  *     description: |
- *       Todos los campos son obligatorios y no pueden estar vacíos ni en blanco.
- *       `cedula` y `correo` deben ser únicos (excluyendo el usuario actual).
+ *       - **Admin**: puede actualizar cualquier usuario.
+ *       - **Empleado**: solo puede actualizar usuarios con rol `cliente`.
+ *       - **Cliente**: no tiene acceso a este endpoint.
+ *       - Todos los campos son obligatorios y no pueden estar vacíos ni en blanco.
+ *       - `cedula` y `correo` deben ser únicos (excluyendo el usuario actual).
  *     tags: [Users]
  *     parameters:
  *       - in: path
@@ -235,13 +238,13 @@ router.post('/', authMiddleware, requireRole(['admin', 'empleado']), (req, res) 
  *       401:
  *         description: No autorizado
  *       403:
- *         description: Sin permiso
+ *         description: Sin permiso (empleado intentando actualizar un empleado o admin)
  *       404:
  *         description: Usuario no encontrado
  *       409:
  *         description: Correo o cédula ya registrada
  */
-router.put('/:id', authMiddleware, requireRole(['admin']), (req, res) => userController.update(req, res));
+router.put('/:id', authMiddleware, requireRole(['admin', 'empleado']), (req, res) => userController.update(req, res));
 
 /**
  * @swagger
