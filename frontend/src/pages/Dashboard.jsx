@@ -2,410 +2,3210 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { motosService } from '../api/motos';
 import { usersService } from '../api/users';
+import { repuestosService } from '../api/repuestos';
+import { ordenesService } from '../api/ordenes';
 
-// --- Sub-componentes ---
+// ── SUB-COMPONENTES DE DISEÑO ────────────────────────────────────────────────
 
-const StatCard = ({ label, value, sub, accentClass, glowClass, loading }) => (
-  <div className={`glass p-6 rounded-2xl border border-white/5 relative overflow-hidden group transition-all ${glowClass}`}>
+const StatCard = ({ label, value, sub, accentClass, glowClass, loading, icon }) => (
+  <div className={`glass p-6 rounded-2xl border border-white/5 relative overflow-hidden group transition-all duration-300 hover:scale-[1.02] ${glowClass}`}>
     <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl transition-all ${accentClass}`}></div>
-    <span className="text-xs text-brand-text-muted uppercase font-bold tracking-wider">{label}</span>
-    {loading ? (
-      <div className="mt-3 h-9 w-24 bg-white/5 rounded-lg animate-pulse"></div>
-    ) : (
-      <h3 className="text-3xl font-extrabold text-white mt-2 mb-1">{value}</h3>
-    )}
-    <p className="text-xs text-brand-text-muted">{sub}</p>
+    <div className="flex justify-between items-start z-10 relative">
+      <div>
+        <span className="text-xs text-brand-text-muted uppercase font-bold tracking-wider">{label}</span>
+        {loading ? (
+          <div className="mt-3 h-9 w-24 bg-white/5 rounded-lg animate-pulse"></div>
+        ) : (
+          <h3 className="text-3xl font-extrabold text-white mt-2 mb-1">{value}</h3>
+        )}
+        <p className="text-xs text-brand-text-muted">{sub}</p>
+      </div>
+      <div className="p-3 bg-white/5 rounded-xl text-brand-primary group-hover:text-white transition-colors">
+        {icon}
+      </div>
+    </div>
   </div>
 );
 
-const Badge = ({ estado }) => {
-  const map = {
-    'En Mantenimiento':   'bg-brand-accent-yellow/10 text-brand-accent-yellow border-brand-accent-yellow/20 bg-brand-accent-yellow',
-    'Listo para Entrega': 'bg-brand-accent-green/10  text-brand-accent-green  border-brand-accent-green/20  bg-brand-accent-green',
-    'Ingresado':          'bg-brand-primary/10        text-brand-primary        border-brand-primary/20        bg-brand-primary',
-    'En Diagnóstico':     'bg-brand-secondary/10      text-brand-secondary      border-brand-secondary/20      bg-brand-secondary',
-  };
-  const dot = {
-    'En Mantenimiento':   'bg-brand-accent-yellow',
-    'Listo para Entrega': 'bg-brand-accent-green',
-    'Ingresado':          'bg-brand-primary',
-    'En Diagnóstico':     'bg-brand-secondary',
-  };
-  const base = map[estado] ?? 'bg-white/10 text-white/60 border-white/10';
-  const d    = dot[estado]  ?? 'bg-white/40';
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold border ${base}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${d}`}></span>
-      {estado}
-    </span>
-  );
-};
-
-// --- Componente principal ---
+// ── COMPONENTE PRINCIPAL ──────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
 
-  const [motos, setMotos]           = useState([]);
+  // Navegación de pestañas
+  const [activeTab, setActiveTab] = useState('resumen'); // 'resumen', 'clientes', 'usuarios', 'motos', 'repuestos', 'ordenes'
+
+  // Estados globales de datos
+  const [motos, setMotos] = useState([]);
+  const [clientes, setClientes] = useState([]);
+  const [usuarios, setUsuarios] = useState([]);
+  const [repuestos, setRepuestos] = useState([]);
+  const [allUsers, setAllUsers] = useState([]); 
+  const [ordenes, setOrdenes] = useState([]);
   const [totalMotos, setTotalMotos] = useState(0);
-  const [totalUsers, setTotalUsers] = useState(0);
   const [totalClientes, setTotalClientes] = useState(0);
-  const [loading, setLoading]       = useState(true);
-  const [error, setError]           = useState('');
+  const [totalUsuarios, setTotalUsuarios] = useState(0);
+  const [totalRepuestos, setTotalRepuestos] = useState(0);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [totalOrdenes, setTotalOrdenes] = useState(0);
+  const [lowStockCount, setLowStockCount] = useState(0);
+  const [activeServices, setActiveServices] = useState([]);
+  const [activeServicesCount, setActiveServicesCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  // Filtros y búsqueda
+  // Paginación y búsquedas por pestaña
   const [searchPlaca, setSearchPlaca] = useState('');
-  const [page, setPage]               = useState(1);
-  const [totalPages, setTotalPages]   = useState(1);
-  const LIMIT = 8;
+  const [motosPage, setMotosPage] = useState(1);
+  const [motosTotalPages, setMotosTotalPages] = useState(1);
+  const [searchCliente, setSearchCliente] = useState('');
+  const [clientesPage, setClientesPage] = useState(1);
+  const [clientesTotalPages, setClientesTotalPages] = useState(1);
 
-  // Formulario nueva moto
-  const [showForm, setShowForm]     = useState(false);
-  const [formLoading, setFormLoading] = useState(false);
-  const [formError, setFormError]   = useState('');
-  const [newMoto, setNewMoto]       = useState({ placa: '', marca: '', modelo: '', color: '', cilindraje: '', anio: new Date().getFullYear(), id_cliente: '' });
+  // Estados de paginación y búsqueda para Usuarios (admin)
+  const [searchUsuario, setSearchUsuario] = useState('');
+  const [filterUsuarioRol, setFilterUsuarioRol] = useState(''); // '' (Todos), 'admin', 'empleado', 'cliente'
+  const [usuariosPage, setUsuariosPage] = useState(1);
+  const [usuariosTotalPages, setUsuariosTotalPages] = useState(1);
 
-  const canEdit = user?.rol === 'admin' || user?.rol === 'empleado';
+  const [searchRepuestoNombre, setSearchRepuestoNombre] = useState('');
+  const [searchRepuestoRef, setSearchRepuestoRef] = useState('');
+  const [repuestosPage, setRepuestosPage] = useState(1);
+  const [repuestosTotalPages, setRepuestosTotalPages] = useState(1);
 
-  // ── Carga de datos ──────────────────────────────────────────────────────────
-  const fetchDashboard = useCallback(async () => {
+  // Estados de paginación y búsqueda para Órdenes
+  const [searchOrdenPlaca, setSearchOrdenPlaca] = useState('');
+  const [filterOrdenEstado, setFilterOrdenEstado] = useState(''); // '' (Todos), 'Recepcion', 'Diagnostico', etc.
+  const [ordenesPage, setOrdenesPage] = useState(1);
+  const [ordenesTotalPages, setOrdenesTotalPages] = useState(1);
+
+  const LIMIT = 6;
+
+  // Estados de formularios
+  const [showMotoForm, setShowMotoForm] = useState(false);
+  const [motoFormLoading, setMotoFormLoading] = useState(false);
+  const [motoFormError, setMotoFormError] = useState('');
+  const [selectedMoto, setSelectedMoto] = useState(null); 
+  const [newMoto, setNewMoto] = useState({
+    placa: '',
+    marca: '',
+    modelo: '',
+    color: '',
+    cilindraje: '',
+    anio: new Date().getFullYear(),
+    id_propietario: ''
+  });
+
+  const [showClienteForm, setShowClienteForm] = useState(false);
+  const [clienteFormLoading, setClienteFormLoading] = useState(false);
+  const [clienteFormError, setClienteFormError] = useState('');
+  const [selectedCliente, setSelectedCliente] = useState(null); 
+  const [newCliente, setNewCliente] = useState({
+    nombre: '',
+    correo: '',
+    cedula: '',
+    telefono: '',
+    password: '',
+    rol: 'cliente'
+  });
+
+  const [showUsuarioForm, setShowUsuarioForm] = useState(false);
+  const [usuarioFormLoading, setUsuarioFormLoading] = useState(false);
+  const [usuarioFormError, setUsuarioFormError] = useState('');
+  const [selectedUsuario, setSelectedUsuario] = useState(null); 
+  const [newUsuario, setNewUsuario] = useState({
+    nombre: '',
+    correo: '',
+    cedula: '',
+    telefono: '',
+    password: '',
+    rol: 'empleado'
+  });
+
+  const [showRepuestoForm, setShowRepuestoForm] = useState(false);
+  const [repuestoFormLoading, setRepuestoFormLoading] = useState(false);
+  const [repuestoFormError, setRepuestoFormError] = useState('');
+  const [selectedRepuesto, setSelectedRepuesto] = useState(null); 
+  const [newRepuesto, setNewRepuesto] = useState({
+    referencia: '',
+    nombre: '',
+    stock: 0,
+    precio: 0
+  });
+
+  const [showOrdenForm, setShowOrdenForm] = useState(false);
+  const [ordenFormLoading, setOrdenFormLoading] = useState(false);
+  const [ordenFormError, setOrdenFormError] = useState('');
+  const [selectedOrden, setSelectedOrden] = useState(null);
+  const [newOrden, setNewOrden] = useState({
+    id_moto: '',
+    id_mecanico: '',
+    fecha_ingreso: new Date().toISOString().substring(0, 16),
+    diagnostico: '',
+    estado: 'Recepcion',
+    valor_mano_obra: 0,
+    detalleOrden: []
+  });
+  const [tempRepuesto, setTempRepuesto] = useState({ id_repuesto: '', cantidad: 1 });
+
+  // Modal de Historial de Servicios
+  const [serviceHistoryMoto, setServiceHistoryMoto] = useState(null);
+
+  // Permisos según rol
+  const isAdmin = user?.rol === 'admin';
+  const isEmpleado = user?.rol === 'empleado';
+  const isCliente = user?.rol === 'cliente';
+  const canEditMotos = isAdmin || isEmpleado;
+  const canEditClientes = isAdmin || isEmpleado;
+  const canEditUsuarios = isAdmin;
+  const canEditRepuestos = isAdmin || isEmpleado;
+  const canEditOrdenes = isAdmin || isEmpleado;
+
+  // Umbral de stock mínimo (alertas visuales críticas)
+  const STOCK_CRITICO = 3;
+  const STOCK_BAJO = 10;
+
+  // Mock de Historial de Servicios (RF-07)
+  const getMockServiceHistory = (motoPlaca) => {
+    return [
+      {
+        id: 101,
+        fecha: '2026-05-10',
+        tipo: 'Mantenimiento Preventivo',
+        descripcion: 'Cambio de aceite de motor (Motul 7100 10W40), cambio de filtro de aceite y lubricación de cadena.',
+        mecanico: 'Carlos Mendoza',
+        costo: 185000,
+        estado: 'Entregado'
+      },
+      {
+        id: 102,
+        fecha: '2026-04-18',
+        tipo: 'Sistema Eléctrico',
+        descripcion: 'Diagnóstico y cambio de batería (Yasa 12V), revisión del regulador de voltaje y limpieza de bornes.',
+        mecanico: 'Alex Tobón',
+        costo: 240000,
+        estado: 'Entregado'
+      },
+      {
+        id: 103,
+        fecha: '2026-03-05',
+        tipo: 'Frenos & Suspensión',
+        descripcion: 'Cambio de pastillas de freno delanteras (Brembo sinterizadas) y cambio de retenes de barras con aceite de suspensión.',
+        mecanico: 'Carlos Mendoza',
+        costo: 320000,
+        estado: 'Entregado'
+      }
+    ];
+  };
+
+  // ── CARGA DE DATOS (MÉTODOS CENTRALIZADOS) ──────────────────────────────────
+
+  const fetchAllData = useCallback(async () => {
     setLoading(true);
     setError('');
 
-    const params = { page, limit: LIMIT };
-    if (searchPlaca) params.placa = searchPlaca;
+    try {
+      // 1. Obtener todas las motos del taller (sin límite) para mapeos y filtros de clientes
+      const allMotosParams = { limit: 500 };
+      if (isCliente) allMotosParams.id_propietario = user.id;
+      const allMotosRes = await motosService.getAll(allMotosParams);
+      const allMotos = allMotosRes.success ? (allMotosRes.data?.items ?? []) : [];
 
-    // Peticiones en paralelo
-    const [motosRes, usersRes, clientesRes] = await Promise.all([
-      motosService.getAll(params),
-      user?.rol === 'admin' ? usersService.getAll({ limit: 1 }) : Promise.resolve(null),
-      user?.rol === 'admin' ? usersService.getAll({ rol: 'cliente', limit: 1 }) : Promise.resolve(null),
-    ]);
+      // Obtener motos paginadas
+      const motosParams = { page: motosPage, limit: LIMIT };
+      if (searchPlaca) motosParams.placa = searchPlaca;
+      if (isCliente) motosParams.id_propietario = user.id;
+      const motosRes = await motosService.getAll(motosParams);
 
-    if (!motosRes.success) {
-      setError(motosRes.error || 'Error al cargar motos.');
+      if (motosRes.success) {
+        const motosData = motosRes.data;
+        setMotos(Array.isArray(motosData) ? motosData : (motosData?.items ?? []));
+        setTotalMotos(motosData?.totalItems ?? (Array.isArray(motosData) ? motosData.length : 0));
+        setMotosTotalPages(motosData?.totalPages ?? 1);
+      } else {
+        setError(motosRes.error || 'Error al cargar motos.');
+      }
+
+      if (!isCliente) {
+        // 2. Obtener clientes (estrictamente rol: 'cliente')
+        const clientesParams = { page: clientesPage, limit: LIMIT, rol: 'cliente' };
+        const clientesRes = await usersService.getAll(clientesParams);
+
+        if (clientesRes.success) {
+          const clientesData = clientesRes.data;
+          let items = clientesData?.items ?? [];
+          if (searchCliente) {
+            items = items.filter(c => 
+              c.nombre.toLowerCase().includes(searchCliente.toLowerCase()) || 
+              c.correo.toLowerCase().includes(searchCliente.toLowerCase()) ||
+              (c.cedula && c.cedula.toLowerCase().includes(searchCliente.toLowerCase()))
+            );
+          }
+          setClientes(items);
+          setTotalClientes(clientesData?.totalItems ?? items.length);
+          setClientesTotalPages(clientesData?.totalPages ?? 1);
+        }
+
+        // 2.5 Obtener todos los usuarios (admins, empleados, clientes) si es Admin
+        if (isAdmin) {
+          const usuariosParams = { page: usuariosPage, limit: LIMIT };
+          if (filterUsuarioRol) {
+            usuariosParams.rol = filterUsuarioRol;
+          }
+          const usuariosRes = await usersService.getAll(usuariosParams);
+          if (usuariosRes.success) {
+            const usuariosData = usuariosRes.data;
+            let items = usuariosData?.items ?? [];
+            if (searchUsuario) {
+              items = items.filter(u => 
+                u.nombre.toLowerCase().includes(searchUsuario.toLowerCase()) || 
+                u.correo.toLowerCase().includes(searchUsuario.toLowerCase()) ||
+                (u.cedula && u.cedula.toLowerCase().includes(searchUsuario.toLowerCase()))
+              );
+            }
+            setUsuarios(items);
+            setTotalUsuarios(usuariosData?.totalItems ?? items.length);
+            setUsuariosTotalPages(usuariosData?.totalPages ?? 1);
+          }
+        }
+
+        // 3. Obtener repuestos (con paginación y filtros si aplica)
+        const repuestosParams = { page: repuestosPage, limit: LIMIT };
+        if (searchRepuestoNombre) repuestosParams.nombre = searchRepuestoNombre;
+        if (searchRepuestoRef)    repuestosParams.referencia = searchRepuestoRef;
+        
+        const repuestosRes = await repuestosService.getAll(repuestosParams);
+        if (repuestosRes.success) {
+          const repData = repuestosRes.data;
+          setRepuestos(Array.isArray(repData) ? repData : (repData?.items ?? []));
+          setTotalRepuestos(repData?.totalItems ?? (Array.isArray(repData) ? repData.length : 0));
+          setRepuestosTotalPages(repData?.totalPages ?? 1);
+        }
+
+        // 4. Calcular repuestos con stock crítico/bajo de forma global para los indicadores
+        const allRepuestosRes = await repuestosService.getAll({ limit: 500 });
+        if (allRepuestosRes.success) {
+          const allReps = allRepuestosRes.data?.items ?? [];
+          const lowStock = allReps.filter(r => r.stock <= STOCK_BAJO).length;
+          setLowStockCount(lowStock);
+        }
+
+        // 5. Obtener todos los usuarios del taller (para asignación de motos y cálculos)
+        const usersRes = await usersService.getAll({ limit: 500 });
+        if (usersRes.success) {
+          const uData = usersRes.data?.items ?? [];
+          setAllUsers(uData);
+          setTotalUsers(usersRes.data?.totalItems ?? uData.length);
+        }
+      } else {
+        // Inicializar estados administrativos vacíos para evitar inconsistencias
+        setAllUsers([user]);
+        setClientes([]);
+        setTotalClientes(0);
+        setClientesTotalPages(1);
+        setUsuarios([]);
+        setTotalUsuarios(0);
+        setUsuariosTotalPages(1);
+        setRepuestos([]);
+        setTotalRepuestos(0);
+        setRepuestosTotalPages(1);
+        setLowStockCount(0);
+      }
+
+      // 6. Obtener órdenes de trabajo
+      if (isCliente) {
+        const clientMotos = allMotos;
+        const clientMotoIds = clientMotos.map(m => m.id);
+        
+        if (clientMotoIds.length === 0) {
+          setOrdenes([]);
+          setTotalOrdenes(0);
+          setOrdenesTotalPages(1);
+          setActiveServices([]);
+          setActiveServicesCount(0);
+        } else {
+          let filteredMotos = clientMotos;
+          if (searchOrdenPlaca) {
+            filteredMotos = clientMotos.filter(m => m.placa.toLowerCase().includes(searchOrdenPlaca.toLowerCase()));
+          }
+
+          if (filteredMotos.length === 0) {
+            setOrdenes([]);
+            setTotalOrdenes(0);
+            setOrdenesTotalPages(1);
+            setActiveServices([]);
+            setActiveServicesCount(0);
+          } else {
+            // Consultar concurrentemente por ID de Moto
+            const promises = filteredMotos.map(m => 
+              ordenesService.getAll({ id_moto: m.id, estado: filterOrdenEstado, limit: 100 })
+            );
+            const results = await Promise.all(promises);
+            let merged = [];
+            results.forEach(res => {
+              if (res.success) {
+                const items = res.data?.items ?? (Array.isArray(res.data) ? res.data : []);
+                merged.push(...items);
+              }
+            });
+
+            // Ordenar por ID de orden de forma descendente (más reciente primero)
+            merged.sort((a, b) => b.id_orden_trabajo - a.id_orden_trabajo);
+
+            // Calcular servicios activos para el cliente (estado !== 'Entregado')
+            const activeItems = merged.filter(o => o.estado !== 'Entregado');
+            setActiveServices(activeItems);
+            setActiveServicesCount(activeItems.length);
+
+            // Paginación local
+            const totalItems = merged.length;
+            const totalPages = Math.ceil(totalItems / LIMIT) || 1;
+            const start = (ordenesPage - 1) * LIMIT;
+            const paginatedItems = merged.slice(start, start + LIMIT);
+
+            setOrdenes(paginatedItems);
+            setTotalOrdenes(totalItems);
+            setOrdenesTotalPages(totalPages);
+          }
+        }
+      } else {
+        const ordenesParams = { page: ordenesPage, limit: LIMIT };
+        if (filterOrdenEstado) ordenesParams.estado = filterOrdenEstado;
+        
+        if (searchOrdenPlaca) {
+          const matchedMotos = allMotos.filter(m => m.placa.toLowerCase().includes(searchOrdenPlaca.toLowerCase()));
+          if (matchedMotos.length > 0) {
+            ordenesParams.id_moto = matchedMotos[0].id;
+          } else {
+            ordenesParams.id_moto = -1; // forzar vacío
+          }
+        }
+
+        const ordenesRes = await ordenesService.getAll(ordenesParams);
+        if (ordenesRes.success) {
+          const items = ordenesRes.data?.items ?? [];
+          const totalItems = ordenesRes.data?.totalItems ?? 0;
+          const totalPages = ordenesRes.data?.totalPages ?? 1;
+
+          setOrdenes(items);
+          setTotalOrdenes(totalItems);
+          setOrdenesTotalPages(totalPages);
+        }
+      }
+
+    } catch (err) {
+      setError('Error al comunicar con la API. Asegurate de que el backend esté arriba.');
+      console.error(err);
+    } finally {
       setLoading(false);
+    }
+  }, [motosPage, searchPlaca, clientesPage, searchCliente, usuariosPage, searchUsuario, filterUsuarioRol, repuestosPage, searchRepuestoNombre, searchRepuestoRef, ordenesPage, searchOrdenPlaca, filterOrdenEstado, user, isAdmin, isCliente]);
+
+  useEffect(() => {
+    fetchAllData();
+  }, [fetchAllData]);
+
+  useEffect(() => {
+    if (isCliente && ['clientes', 'usuarios', 'repuestos'].includes(activeTab)) {
+      setActiveTab('resumen');
+    }
+  }, [activeTab, isCliente]);
+
+  // Manejadores de búsqueda rápida
+  const handlePlacaSearch = (e) => {
+    setSearchPlaca(e.target.value);
+    setMotosPage(1);
+  };
+
+  const handleClienteSearch = (e) => {
+    setSearchCliente(e.target.value);
+    setClientesPage(1);
+  };
+
+  const handleUsuarioSearch = (e) => {
+    setSearchUsuario(e.target.value);
+    setUsuariosPage(1);
+  };
+
+  const handleRepuestoSearchName = (e) => {
+    setSearchRepuestoNombre(e.target.value);
+    setRepuestosPage(1);
+  };
+
+  const handleRepuestoSearchRef = (e) => {
+    setSearchRepuestoRef(e.target.value);
+    setRepuestosPage(1);
+  };
+
+  // ── ACCIONES CLIENTES (CRUD) ────────────────────────────────────────────────
+
+  const handleCreateOrUpdateCliente = async (e) => {
+    e.preventDefault();
+    setClienteFormLoading(true);
+    setClienteFormError('');
+
+    // Validar cédula y teléfono antes de enviar
+    if (!newCliente.cedula.trim() || !newCliente.telefono.trim()) {
+      setClienteFormError('Cédula y Teléfono son obligatorios.');
+      setClienteFormLoading(false);
       return;
     }
 
-    // La API devuelve { items, totalItems, totalPages, currentPage }
-    const motosData = motosRes.data;
-    setMotos(Array.isArray(motosData) ? motosData : (motosData?.items ?? []));
-    setTotalMotos(motosData?.totalItems ?? (Array.isArray(motosData) ? motosData.length : 0));
-    setTotalPages(motosData?.totalPages ?? 1);
-
-    if (usersRes?.success)    setTotalUsers(usersRes.data?.totalItems ?? 0);
-    if (clientesRes?.success) setTotalClientes(clientesRes.data?.totalItems ?? 0);
-
-    setLoading(false);
-  }, [page, searchPlaca, user?.rol]);
-
-  useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
-
-  // Búsqueda con debounce liviano
-  const handleSearch = (e) => {
-    setSearchPlaca(e.target.value);
-    setPage(1);
+    try {
+      if (selectedCliente) {
+        const body = {
+          nombre: newCliente.nombre.trim(),
+          correo: newCliente.correo.trim(),
+          cedula: newCliente.cedula.trim(),
+          telefono: newCliente.telefono.trim()
+        };
+        const res = await usersService.update(selectedCliente.id, body);
+        if (res.success) {
+          if (newCliente.password) {
+            await usersService.resetPassword(selectedCliente.id, { newPassword: newCliente.password });
+          }
+          setShowClienteForm(false);
+          setSelectedCliente(null);
+          setNewCliente({ nombre: '', correo: '', cedula: '', telefono: '', password: '', rol: 'cliente' });
+          fetchAllData();
+        } else {
+          setClienteFormError(res.error || 'No se pudo actualizar el cliente.');
+        }
+      } else {
+        if (!newCliente.password) {
+          setClienteFormError('La contraseña es obligatoria para nuevos clientes.');
+          setClienteFormLoading(false);
+          return;
+        }
+        const body = {
+          nombre: newCliente.nombre.trim(),
+          correo: newCliente.correo.trim(),
+          cedula: newCliente.cedula.trim(),
+          telefono: newCliente.telefono.trim(),
+          password: newCliente.password,
+          rol: 'cliente' // Forzado en vista de Clientes
+        };
+        const res = await usersService.create(body);
+        if (res.success) {
+          setShowClienteForm(false);
+          setNewCliente({ nombre: '', correo: '', cedula: '', telefono: '', password: '', rol: 'cliente' });
+          fetchAllData();
+        } else {
+          setClienteFormError(res.error || 'No se pudo registrar el cliente.');
+        }
+      }
+    } catch (err) {
+      setClienteFormError('Error en la solicitud.');
+    } finally {
+      setClienteFormLoading(false);
+    }
   };
 
-  // ── Crear moto ──────────────────────────────────────────────────────────────
-  const handleCreateMoto = async (e) => {
+  const handleEditClienteClick = (cliente) => {
+    setSelectedCliente(cliente);
+    setNewCliente({
+      nombre: cliente.nombre,
+      correo: cliente.correo,
+      cedula: cliente.cedula || '',
+      telefono: cliente.telefono || '',
+      password: '', 
+      rol: 'cliente'
+    });
+    setShowClienteForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDeleteCliente = async (cliente) => {
+    if (!confirm(`¿Eliminar al cliente ${cliente.nombre}? Esto podría dejar sin dueño a sus motos asignadas.`)) return;
+    const res = await usersService.remove(cliente.id);
+    if (res.success) {
+      fetchAllData();
+    } else {
+      alert(res.error || 'No se pudo eliminar el cliente.');
+    }
+  };
+
+  const handleToggleClienteActive = async (cliente) => {
+    const res = await usersService.toggleActive(cliente.id);
+    if (res.success) {
+      fetchAllData();
+    } else {
+      alert(res.error || 'No se pudo cambiar el estado del cliente.');
+    }
+  };
+
+  // ── ACCIONES USUARIOS (CRUD EXCLUSIVO ADMIN) ─────────────────────────────────
+
+  const handleCreateOrUpdateUsuario = async (e) => {
     e.preventDefault();
-    setFormLoading(true);
-    setFormError('');
+    setUsuarioFormLoading(true);
+    setUsuarioFormError('');
+
+    if (!newUsuario.cedula.trim() || !newUsuario.telefono.trim()) {
+      setUsuarioFormError('Cédula y Teléfono son obligatorios.');
+      setUsuarioFormLoading(false);
+      return;
+    }
+
+    try {
+      if (selectedUsuario) {
+        // En edición, no enviamos el rol debido a las restricciones del backend
+        const body = {
+          nombre: newUsuario.nombre.trim(),
+          correo: newUsuario.correo.trim(),
+          cedula: newUsuario.cedula.trim(),
+          telefono: newUsuario.telefono.trim()
+        };
+        const res = await usersService.update(selectedUsuario.id, body);
+        if (res.success) {
+          if (newUsuario.password) {
+            await usersService.resetPassword(selectedUsuario.id, { newPassword: newUsuario.password });
+          }
+          setShowUsuarioForm(false);
+          setSelectedUsuario(null);
+          setNewUsuario({ nombre: '', correo: '', cedula: '', telefono: '', password: '', rol: 'empleado' });
+          fetchAllData();
+        } else {
+          setUsuarioFormError(res.error || 'No se pudo actualizar el usuario.');
+        }
+      } else {
+        if (!newUsuario.password) {
+          setUsuarioFormError('La contraseña es obligatoria para nuevos usuarios.');
+          setUsuarioFormLoading(false);
+          return;
+        }
+        const body = {
+          nombre: newUsuario.nombre.trim(),
+          correo: newUsuario.correo.trim(),
+          cedula: newUsuario.cedula.trim(),
+          telefono: newUsuario.telefono.trim(),
+          password: newUsuario.password,
+          rol: newUsuario.rol
+        };
+        const res = await usersService.create(body);
+        if (res.success) {
+          setShowUsuarioForm(false);
+          setNewUsuario({ nombre: '', correo: '', cedula: '', telefono: '', password: '', rol: 'empleado' });
+          fetchAllData();
+        } else {
+          setUsuarioFormError(res.error || 'No se pudo registrar el usuario.');
+        }
+      }
+    } catch (err) {
+      setUsuarioFormError('Error en la solicitud.');
+    } finally {
+      setUsuarioFormLoading(false);
+    }
+  };
+
+  const handleEditUsuarioClick = (usuario) => {
+    setSelectedUsuario(usuario);
+    setNewUsuario({
+      nombre: usuario.nombre,
+      correo: usuario.correo,
+      cedula: usuario.cedula || '',
+      telefono: usuario.telefono || '',
+      password: '', 
+      rol: usuario.rol
+    });
+    setShowUsuarioForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDeleteUsuario = async (usuario) => {
+    if (usuario.id === user.id) {
+      alert('No podés eliminar tu propia cuenta de administrador.');
+      return;
+    }
+    if (!confirm(`¿Eliminar al usuario ${usuario.nombre}? Esta acción es irreversible.`)) return;
+    const res = await usersService.remove(usuario.id);
+    if (res.success) {
+      fetchAllData();
+    } else {
+      alert(res.error || 'No se pudo eliminar el usuario.');
+    }
+  };
+
+  const handleToggleUsuarioActive = async (usuario) => {
+    if (usuario.id === user.id) {
+      alert('No podés desactivar tu propia cuenta de administrador.');
+      return;
+    }
+    if (usuario.rol === 'admin') {
+      alert('No se puede activar/desactivar un administrador.');
+      return;
+    }
+    const res = await usersService.toggleActive(usuario.id);
+    if (res.success) {
+      fetchAllData();
+    } else {
+      alert(res.error || 'No se pudo cambiar el estado del usuario.');
+    }
+  };
+
+  // ── ACCIONES MOTOCICLETAS (CRUD) ────────────────────────────────────────────
+
+  const handleCreateOrUpdateMoto = async (e) => {
+    e.preventDefault();
+    setMotoFormLoading(true);
+    setMotoFormError('');
 
     const body = {
-      placa:      newMoto.placa.toUpperCase(),
-      marca:      newMoto.marca,
-      modelo:     newMoto.modelo,
-      color:      newMoto.color,
+      placa: newMoto.placa.toUpperCase(),
+      marca: newMoto.marca,
+      modelo: newMoto.modelo,
+      color: newMoto.color,
       cilindraje: newMoto.cilindraje,
-      anio:       parseInt(newMoto.anio),
-      id_cliente: parseInt(newMoto.id_cliente),
+      anio: parseInt(newMoto.anio),
+      id_propietario: parseInt(newMoto.id_propietario),
     };
 
-    const res = await motosService.create(body);
-    if (res.success) {
-      setNewMoto({ placa: '', marca: '', modelo: '', color: '', cilindraje: '', anio: new Date().getFullYear(), id_cliente: '' });
-      setShowForm(false);
-      fetchDashboard();
-    } else {
-      setFormError(res.error || 'No se pudo registrar la moto.');
+    try {
+      if (selectedMoto) {
+        const res = await motosService.update(selectedMoto.id, body);
+        if (res.success) {
+          setShowMotoForm(false);
+          setSelectedMoto(null);
+          setNewMoto({ placa: '', marca: '', modelo: '', color: '', cilindraje: '', anio: new Date().getFullYear(), id_propietario: '' });
+          fetchAllData();
+        } else {
+          setMotoFormError(res.error || 'No se pudo actualizar la motocicleta.');
+        }
+      } else {
+        const res = await motosService.create(body);
+        if (res.success) {
+          setShowMotoForm(false);
+          setNewMoto({ placa: '', marca: '', modelo: '', color: '', cilindraje: '', anio: new Date().getFullYear(), id_propietario: '' });
+          fetchAllData();
+        } else {
+          setMotoFormError(res.error || 'No se pudo registrar la motocicleta.');
+        }
+      }
+    } catch (err) {
+      setMotoFormError('Error en la solicitud.');
+    } finally {
+      setMotoFormLoading(false);
     }
-    setFormLoading(false);
   };
 
-  // ── Eliminar moto ───────────────────────────────────────────────────────────
-  const handleDelete = async (moto) => {
-    if (!confirm(`¿Eliminar la moto ${moto.placa}? Esta acción no se puede deshacer.`)) return;
+  const handleEditMotoClick = (moto) => {
+    setSelectedMoto(moto);
+    setNewMoto({
+      placa: moto.placa,
+      marca: moto.marca,
+      modelo: moto.modelo,
+      color: moto.color,
+      cilindraje: moto.cilindraje,
+      anio: moto.anio,
+      id_propietario: moto.id_propietario || ''
+    });
+    setShowMotoForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDeleteMoto = async (moto) => {
+    if (!confirm(`¿Eliminar la motocicleta con placa ${moto.placa}? Esta acción es irreversible.`)) return;
     const res = await motosService.remove(moto.id);
     if (res.success) {
-      fetchDashboard();
+      fetchAllData();
     } else {
       alert(res.error || 'No se pudo eliminar la moto.');
     }
   };
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  const getPropietarioName = (idPropietario) => {
+    const p = allUsers.find(u => u.id === idPropietario);
+    return p ? p.nombre : 'No asignado';
+  };
+
+  // ── ACCIONES REPUESTOS (CRUD & STOCK) ───────────────────────────────────────────
+
+  const handleCreateOrUpdateRepuesto = async (e) => {
+    e.preventDefault();
+    setRepuestoFormLoading(true);
+    setRepuestoFormError('');
+
+    const body = {
+      referencia: newRepuesto.referencia.trim().toUpperCase(),
+      nombre: newRepuesto.nombre.trim(),
+      stock: parseInt(newRepuesto.stock),
+      precio: parseFloat(newRepuesto.precio),
+    };
+
+    if (body.stock < 0) {
+      setRepuestoFormError('El stock no puede ser negativo.');
+      setRepuestoFormLoading(false);
+      return;
+    }
+    if (body.precio < 0) {
+      setRepuestoFormError('El precio no puede ser negativo.');
+      setRepuestoFormLoading(false);
+      return;
+    }
+
+    try {
+      if (selectedRepuesto) {
+        // ACTUALIZACIÓN
+        const res = await repuestosService.update(selectedRepuesto.id_repuesto, body);
+        if (res.success) {
+          setShowRepuestoForm(false);
+          setSelectedRepuesto(null);
+          setNewRepuesto({ referencia: '', nombre: '', stock: 0, precio: 0 });
+          fetchAllData();
+        } else {
+          setRepuestoFormError(res.error || 'No se pudo actualizar el repuesto.');
+        }
+      } else {
+        // CREACIÓN
+        const res = await repuestosService.create(body);
+        if (res.success) {
+          setShowRepuestoForm(false);
+          setNewRepuesto({ referencia: '', nombre: '', stock: 0, precio: 0 });
+          fetchAllData();
+        } else {
+          setRepuestoFormError(res.error || 'No se pudo registrar el repuesto.');
+        }
+      }
+    } catch (err) {
+      setRepuestoFormError('Error en la solicitud.');
+    } finally {
+      setRepuestoFormLoading(false);
+    }
+  };
+
+  const handleEditRepuestoClick = (rep) => {
+    setSelectedRepuesto(rep);
+    setNewRepuesto({
+      referencia: rep.referencia,
+      nombre: rep.nombre,
+      stock: rep.stock,
+      precio: rep.precio
+    });
+    setShowRepuestoForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDeleteRepuesto = async (rep) => {
+    if (!confirm(`¿Eliminar el repuesto "${rep.nombre}" (${rep.referencia})?`)) return;
+    const res = await repuestosService.remove(rep.id_repuesto);
+    if (res.success) {
+      fetchAllData();
+    } else {
+      alert(res.error || 'No se pudo eliminar el repuesto.');
+    }
+  };
+
+  const handleQuickAddStock = async (rep, amount) => {
+    const newStock = rep.stock + amount;
+    if (newStock < 0) {
+      alert('El stock no puede quedar negativo.');
+      return;
+    }
+    const body = {
+      referencia: rep.referencia,
+      nombre: rep.nombre,
+      stock: newStock,
+      precio: rep.precio
+    };
+    const res = await repuestosService.update(rep.id_repuesto, body);
+    if (res.success) {
+      fetchAllData();
+    } else {
+      alert(res.error || 'No se pudo ajustar el stock.');
+    }
+  };
+
+  // ── ACCIONES ÓRDENES DE TRABAJO (CRUD & TRANSACCIONAL) ─────────────────────
+
+  const handleCreateOrUpdateOrden = async (e) => {
+    e.preventDefault();
+    setOrdenFormLoading(true);
+    setOrdenFormError('');
+
+    if (!newOrden.id_moto) {
+      setOrdenFormError('La motocicleta es obligatoria.');
+      setOrdenFormLoading(false);
+      return;
+    }
+    if (!newOrden.id_mecanico) {
+      setOrdenFormError('El mecánico asignado es obligatorio.');
+      setOrdenFormLoading(false);
+      return;
+    }
+    if (!newOrden.diagnostico.trim()) {
+      setOrdenFormError('El diagnóstico técnico no puede estar vacío.');
+      setOrdenFormLoading(false);
+      return;
+    }
+    if (parseFloat(newOrden.valor_mano_obra) < 0) {
+      setOrdenFormError('El valor de la mano de obra no puede ser negativo.');
+      setOrdenFormLoading(false);
+      return;
+    }
+
+    const body = {
+      id_moto: parseInt(newOrden.id_moto),
+      id_mecanico: parseInt(newOrden.id_mecanico),
+      fecha_ingreso: newOrden.fecha_ingreso,
+      diagnostico: newOrden.diagnostico.trim(),
+      valor_mano_obra: parseFloat(newOrden.valor_mano_obra),
+      detalleOrden: newOrden.detalleOrden.map(d => ({
+        id_repuesto: parseInt(d.id_repuesto),
+        cantidad: parseInt(d.cantidad)
+      }))
+    };
+
+    try {
+      if (selectedOrden) {
+        const putBody = {
+          id_mecanico: body.id_mecanico,
+          fecha_ingreso: body.fecha_ingreso,
+          diagnostico: body.diagnostico,
+          estado: newOrden.estado,
+          valor_mano_obra: body.valor_mano_obra,
+          detalleOrden: body.detalleOrden
+        };
+        const res = await ordenesService.update(selectedOrden.id_orden_trabajo, putBody);
+        if (res.success) {
+          setShowOrdenForm(false);
+          setSelectedOrden(null);
+          setNewOrden({
+            id_moto: '',
+            id_mecanico: '',
+            fecha_ingreso: new Date().toISOString().substring(0, 16),
+            diagnostico: '',
+            estado: 'Recepcion',
+            valor_mano_obra: 0,
+            detalleOrden: []
+          });
+          fetchAllData();
+        } else {
+          setOrdenFormError(res.error || 'No se pudo actualizar la orden de trabajo.');
+        }
+      } else {
+        const res = await ordenesService.create(body);
+        if (res.success) {
+          setShowOrdenForm(false);
+          setNewOrden({
+            id_moto: '',
+            id_mecanico: '',
+            fecha_ingreso: new Date().toISOString().substring(0, 16),
+            diagnostico: '',
+            estado: 'Recepcion',
+            valor_mano_obra: 0,
+            detalleOrden: []
+          });
+          fetchAllData();
+        } else {
+          setOrdenFormError(res.error || 'No se pudo registrar la orden de trabajo.');
+        }
+      }
+    } catch (err) {
+      setOrdenFormError('Error de red al procesar la orden.');
+    } finally {
+      setOrdenFormLoading(false);
+    }
+  };
+
+  const handleEditOrdenClick = async (orden) => {
+    setSelectedOrden(orden);
+    setOrdenFormLoading(true);
+    setOrdenFormError('');
+    setShowOrdenForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    try {
+      const res = await ordenesService.getById(orden.id_orden_trabajo);
+      if (res.success) {
+        const full = res.data;
+        
+        // Mapear detalles agregando los precios locales del stock
+        const mappedDetails = (full.detalleOrden || []).map(d => {
+          const matched = repuestos.find(r => r.id_repuesto === d.id_repuesto);
+          const precio = matched ? matched.precio : 0;
+          return {
+            id_repuesto: d.id_repuesto,
+            nombre_Respuesto: d.nombre_Respuesto || (matched ? matched.nombre : `ID ${d.id_repuesto}`),
+            cantidad: d.cantidad,
+            precio: precio,
+            subtotal: d.subtotal
+          };
+        });
+
+        setNewOrden({
+          id_moto: full.id_moto,
+          id_mecanico: full.id_mecanico,
+          fecha_ingreso: new Date(full.fecha_ingreso).toISOString().substring(0, 16),
+          diagnostico: full.diagnostico,
+          estado: full.estado,
+          valor_mano_obra: full.valor_mano_obra,
+          detalleOrden: mappedDetails
+        });
+      } else {
+        setOrdenFormError(res.error || 'Error al recuperar la información detallada.');
+      }
+    } catch (err) {
+      setOrdenFormError('Error al procesar la información de la orden.');
+    } finally {
+      setOrdenFormLoading(false);
+    }
+  };
+
+  const handleDeleteOrden = async (orden) => {
+    if (!confirm(`¿Eliminar la orden de trabajo #${orden.id_orden_trabajo}? Se devolverán los repuestos asignados al inventario.`)) return;
+    const res = await ordenesService.remove(orden.id_orden_trabajo);
+    if (res.success) {
+      fetchAllData();
+    } else {
+      alert(res.error || 'No se pudo eliminar la orden de trabajo.');
+    }
+  };
+
+  const handleUpdateOrdenEstado = async (orden, nuevoEstado) => {
+    try {
+      const getRes = await ordenesService.getById(orden.id_orden_trabajo);
+      if (!getRes.success) {
+        alert(getRes.error || 'No se pudo consultar el estado actual.');
+        return;
+      }
+      const full = getRes.data;
+
+      const body = {
+        id_mecanico: full.id_mecanico,
+        fecha_ingreso: full.fecha_ingreso,
+        diagnostico: full.diagnostico,
+        estado: nuevoEstado,
+        valor_mano_obra: full.valor_mano_obra,
+        detalleOrden: (full.detalleOrden || []).map(d => ({
+          id_repuesto: d.id_repuesto,
+          cantidad: d.cantidad
+        }))
+      };
+
+      const res = await ordenesService.update(orden.id_orden_trabajo, body);
+      if (res.success) {
+        fetchAllData();
+      } else {
+        alert(res.error || 'No se pudo actualizar el estado.');
+      }
+    } catch (err) {
+      alert('Error al intentar actualizar el estado.');
+    }
+  };
+
+  const handleDownloadPdf = async (orden) => {
+    try {
+      const token = localStorage.getItem('motoboss_token');
+      const response = await fetch(`http://localhost:3000/api/ordenes/${orden.id_orden_trabajo}/pdf`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al descargar el PDF.');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Orden_${orden.id_orden_trabajo}_Placa_${orden.placa_moto || 'Taller'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err.message || 'Error al generar la descarga del PDF.');
+    }
+  };
+
+  const handleAddRepuestoToOrden = () => {
+    const idRep = parseInt(tempRepuesto.id_repuesto);
+    const cant = parseInt(tempRepuesto.cantidad);
+
+    if (!idRep || cant <= 0) {
+      alert('Selecciona un repuesto e introduce una cantidad válida.');
+      return;
+    }
+
+    const rep = repuestos.find(r => r.id_repuesto === idRep);
+    if (!rep) return;
+
+    if (cant > rep.stock) {
+      alert(`Stock insuficiente en inventario. Stock real disponible: ${rep.stock}`);
+      return;
+    }
+
+    const exists = newOrden.detalleOrden.find(d => d.id_repuesto === idRep);
+    if (exists) {
+      alert('Este repuesto ya se encuentra agregado en la lista.');
+      return;
+    }
+
+    const sub = rep.precio * cant;
+    const newItem = {
+      id_repuesto: idRep,
+      nombre_Respuesto: rep.nombre,
+      cantidad: cant,
+      precio: rep.precio,
+      subtotal: sub
+    };
+
+    setNewOrden(prev => ({
+      ...prev,
+      detalleOrden: [...prev.detalleOrden, newItem]
+    }));
+
+    setTempRepuesto({ id_repuesto: '', cantidad: 1 });
+  };
+
+  const handleRemoveRepuestoFromOrden = (idRep) => {
+    setNewOrden(prev => ({
+      ...prev,
+      detalleOrden: prev.detalleOrden.filter(d => d.id_repuesto !== idRep)
+    }));
+  };
+
+  const handleOrdenSearchPlaca = (e) => {
+    setSearchOrdenPlaca(e.target.value);
+    setOrdenesPage(1);
+  };
+
   return (
-    <div className="min-h-screen bg-brand-bg text-brand-text flex flex-col font-sans relative overflow-hidden">
+    <div className="min-h-screen bg-brand-bg text-brand-text flex font-sans relative overflow-hidden">
+      
+      {/* Luces de fondo premium */}
+      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-brand-primary/5 blur-[120px] pointer-events-none"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-brand-secondary/5 blur-[120px] pointer-events-none"></div>
 
-      {/* Luces de fondo */}
-      <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] rounded-full bg-brand-primary/10 blur-[120px] pointer-events-none"></div>
-      <div className="absolute bottom-[-20%] right-[-20%] w-[60%] h-[60%] rounded-full bg-brand-secondary/10 blur-[120px] pointer-events-none"></div>
-
-      {/* ── HEADER ── */}
-      <header className="glass border-b border-white/5 py-4 px-6 md:px-10 flex items-center justify-between z-10 sticky top-0">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-secondary to-brand-primary flex items-center justify-center shadow-lg shadow-brand-primary/20 animate-pulse-subtle">
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+      {/* ── SIDEBAR ADAPTATIVO POR ROL ── */}
+      <aside className="w-64 bg-brand-surface border-r border-white/5 flex flex-col z-20 shrink-0 hidden md:flex">
+        <div className="p-6 border-b border-white/5 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-secondary to-brand-primary flex items-center justify-center shadow-lg shadow-brand-primary/20 animate-pulse-subtle">
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
           </div>
           <div>
-            <p className="text-base font-bold tracking-tight text-white leading-none">MOTO<span className="text-brand-primary">BOSS</span></p>
+            <p className="text-lg font-extrabold tracking-tight text-white leading-none">MOTO<span className="text-brand-primary">BOSS</span></p>
             <span className="text-[10px] uppercase tracking-widest text-brand-text-muted">Enterprise Console</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Chip de usuario */}
-          <div className="hidden sm:flex items-center gap-2 bg-brand-surface border border-white/5 px-3 py-1.5 rounded-lg">
-            <div className="w-2 h-2 rounded-full bg-brand-accent-green animate-pulse"></div>
-            <span className="text-xs text-white font-medium">{user?.nombre}</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand-primary/20 text-brand-primary font-bold uppercase">{user?.rol}</span>
+        <nav className="flex-1 p-4 space-y-1.5">
+          <button
+            onClick={() => setActiveTab('resumen')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all cursor-pointer ${
+              activeTab === 'resumen' 
+                ? 'bg-gradient-to-r from-brand-secondary/20 to-brand-primary/10 text-brand-primary border border-brand-primary/20 shadow-md shadow-brand-primary/5' 
+                : 'text-brand-text-muted hover:text-white hover:bg-white/5 border border-transparent'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4zM14 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2v-4z" />
+            </svg>
+            Resumen
+          </button>
+
+          {!isCliente && (
+            <button
+              onClick={() => setActiveTab('clientes')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all cursor-pointer ${
+                activeTab === 'clientes' 
+                  ? 'bg-gradient-to-r from-brand-secondary/20 to-brand-primary/10 text-brand-primary border border-brand-primary/20 shadow-md shadow-brand-primary/5' 
+                  : 'text-brand-text-muted hover:text-white hover:bg-white/5 border border-transparent'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              Gestión de Clientes
+            </button>
+          )}
+
+          {isAdmin && !isCliente && (
+            <button
+              onClick={() => setActiveTab('usuarios')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all cursor-pointer ${
+                activeTab === 'usuarios' 
+                  ? 'bg-gradient-to-r from-brand-secondary/20 to-brand-primary/10 text-brand-primary border border-brand-primary/20 shadow-md shadow-brand-primary/5' 
+                  : 'text-brand-text-muted hover:text-white hover:bg-white/5 border border-transparent'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0-.001h6v-1a6 6 0 00-9-5.197M13 7a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Gestión de Usuarios
+            </button>
+          )}
+
+          <button
+            onClick={() => setActiveTab('motos')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all cursor-pointer ${
+              activeTab === 'motos' 
+                ? 'bg-gradient-to-r from-brand-secondary/20 to-brand-primary/10 text-brand-primary border border-brand-primary/20 shadow-md shadow-brand-primary/5' 
+                : 'text-brand-text-muted hover:text-white hover:bg-white/5 border border-transparent'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10M21 16V10a2 2 0 00-2-2h-3V5a1 1 0 00-1-1H9" />
+            </svg>
+            {isCliente ? 'Mis Motocicletas' : 'Motocicletas'}
+          </button>
+
+          {!isCliente && (
+            <button
+              onClick={() => setActiveTab('repuestos')}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all cursor-pointer ${
+                activeTab === 'repuestos' 
+                  ? 'bg-gradient-to-r from-brand-secondary/20 to-brand-primary/10 text-brand-primary border border-brand-primary/20 shadow-md shadow-brand-primary/5' 
+                  : 'text-brand-text-muted hover:text-white hover:bg-white/5 border border-transparent'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span>Repuestos</span>
+              </div>
+              {lowStockCount > 0 && (
+                <span className="text-[9px] font-bold bg-brand-accent-red/20 border border-brand-accent-red/30 px-1.5 py-0.5 rounded-full text-brand-accent-red animate-pulse">
+                  {lowStockCount}
+                </span>
+              )}
+            </button>
+          )}
+
+          <button
+            onClick={() => setActiveTab('ordenes')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all cursor-pointer ${
+              activeTab === 'ordenes' 
+                ? 'bg-gradient-to-r from-brand-secondary/20 to-brand-primary/10 text-brand-primary border border-brand-primary/20 shadow-md shadow-brand-primary/5' 
+                : 'text-brand-text-muted hover:text-white hover:bg-white/5 border border-transparent'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+            </svg>
+            {isCliente ? 'Mis Órdenes' : 'Órdenes de Trabajo'}
+          </button>
+        </nav>
+
+        <div className="p-4 border-t border-white/5 bg-white/[0.01]">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-8 h-8 rounded-lg bg-brand-primary/20 flex items-center justify-center font-bold text-brand-primary uppercase text-xs">
+              {user?.nombre?.substring(0,2)}
+            </div>
+            <div className="overflow-hidden">
+              <p className="text-xs font-semibold text-white truncate leading-none mb-0.5">{user?.nombre}</p>
+              <span className="text-[9px] uppercase font-bold text-brand-primary">{user?.rol}</span>
+            </div>
           </div>
           <button
             onClick={logout}
-            className="text-xs bg-white/5 hover:bg-brand-accent-red/20 border border-white/10 hover:border-brand-accent-red/30 px-3 py-1.5 rounded-lg text-brand-text-muted hover:text-white transition-all cursor-pointer"
+            className="w-full text-center text-xs bg-white/5 hover:bg-brand-accent-red/20 border border-white/10 hover:border-brand-accent-red/30 px-3 py-2 rounded-xl text-brand-text-muted hover:text-white transition-all cursor-pointer"
           >
-            Salir
+            Cerrar Sesión
           </button>
         </div>
-      </header>
+      </aside>
 
-      {/* ── CONTENIDO ── */}
-      <main className="flex-1 p-6 md:p-10 z-10 space-y-6 max-w-7xl mx-auto w-full">
-
-        {/* Saludo */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-semibold text-brand-primary tracking-wider uppercase mb-1">
-              <span className="w-2 h-2 rounded-full bg-brand-primary animate-ping"></span>
-              Conectado a la API
+      {/* ── CONTENIDO PRINCIPAL ── */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        
+        {/* HEADER */}
+        <header className="glass border-b border-white/5 py-4 px-6 md:px-10 flex items-center justify-between z-10 sticky top-0 md:bg-brand-bg/80 md:backdrop-blur-md">
+          <div className="flex items-center gap-3 md:hidden">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-brand-secondary to-brand-primary flex items-center justify-center animate-pulse-subtle">
+              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
             </div>
-            <h2 className="text-2xl font-bold text-white tracking-tight m-0">Hola, {user?.nombre} 👋</h2>
-            <p className="text-xs text-brand-text-muted mt-0.5">{new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+            <p className="text-base font-bold tracking-tight text-white leading-none">MOTO<span className="text-brand-primary">BOSS</span></p>
           </div>
 
-          {canEdit && (
-            <button
-              onClick={() => setShowForm(v => !v)}
-              className="self-start sm:self-auto inline-flex items-center gap-2 bg-gradient-to-r from-brand-secondary to-brand-primary hover:brightness-110 text-white font-semibold px-4 py-2.5 rounded-xl shadow-lg shadow-brand-primary/20 transition-all text-xs cursor-pointer"
+          <h1 className="text-lg font-bold text-white tracking-tight hidden md:block">
+            {activeTab === 'resumen' && (isCliente ? 'Portal del Cliente' : 'Consola Principal')}
+            {activeTab === 'clientes' && 'Gestión de Clientes'}
+            {activeTab === 'usuarios' && 'Gestión de Usuarios'}
+            {activeTab === 'motos' && (isCliente ? 'Mis Motocicletas' : 'Gestión de Motocicletas')}
+            {activeTab === 'repuestos' && 'Inventario de Repuestos'}
+            {activeTab === 'ordenes' && (isCliente ? 'Mis Órdenes de Trabajo' : 'Órdenes de Trabajo')}
+          </h1>
+
+          {/* Menú móvil rápido */}
+          <div className="flex flex-wrap items-center gap-1.5 md:hidden">
+            <button 
+              onClick={() => setActiveTab('resumen')} 
+              className={`p-1.5 rounded-lg text-[11px] font-semibold ${activeTab === 'resumen' ? 'bg-brand-primary/20 text-brand-primary' : 'text-brand-text-muted'}`}
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-              </svg>
-              {showForm ? 'Cancelar' : 'Nueva Moto'}
+              Resumen
             </button>
-          )}
-        </div>
-
-        {/* Error global */}
-        {error && (
-          <div className="p-4 bg-brand-accent-red/10 border border-brand-accent-red/20 rounded-xl text-brand-accent-red text-xs flex items-center gap-2">
-            <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            {error} — Verificá que el backend esté corriendo en el puerto 3000.
-          </div>
-        )}
-
-        {/* ── TARJETAS DE MÉTRICAS ── */}
-        <div className={`grid gap-5 ${user?.rol === 'admin' ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`}>
-          <StatCard
-            label="Motos Registradas"
-            value={totalMotos}
-            sub="Total en la base de datos"
-            accentClass="bg-brand-primary/5 group-hover:bg-brand-primary/10"
-            glowClass="hover:border-brand-primary/20"
-            loading={loading}
-          />
-          <StatCard
-            label="Página actual"
-            value={`${motos.length} motos`}
-            sub={`Página ${page} de ${totalPages}`}
-            accentClass="bg-brand-secondary/5 group-hover:bg-brand-secondary/10"
-            glowClass="hover:border-brand-secondary/20"
-            loading={loading}
-          />
-          {user?.rol === 'admin' && (
-            <StatCard
-              label="Clientes Registrados"
-              value={totalClientes}
-              sub={`${totalUsers} usuarios totales`}
-              accentClass="bg-brand-accent-green/5 group-hover:bg-brand-accent-green/10"
-              glowClass="hover:border-brand-accent-green/20"
-              loading={loading}
-            />
-          )}
-        </div>
-
-        {/* ── FORMULARIO NUEVA MOTO (colapsable) ── */}
-        {showForm && canEdit && (
-          <div className="glass rounded-2xl border border-white/10 p-6">
-            <h3 className="text-base font-bold text-white mb-4 tracking-tight">Registrar nueva motocicleta</h3>
-            {formError && (
-              <p className="mb-4 text-xs text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 rounded-xl px-4 py-3">{formError}</p>
+            {!isCliente && (
+              <button 
+                onClick={() => setActiveTab('clientes')} 
+                className={`p-1.5 rounded-lg text-[11px] font-semibold ${activeTab === 'clientes' ? 'bg-brand-primary/20 text-brand-primary' : 'text-brand-text-muted'}`}
+              >
+                Clientes
+              </button>
             )}
-            <form onSubmit={handleCreateMoto} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[
-                { key: 'placa',      label: 'Placa',         placeholder: 'ABC-123' },
-                { key: 'marca',      label: 'Marca',         placeholder: 'Yamaha' },
-                { key: 'modelo',     label: 'Modelo',        placeholder: 'MT-09' },
-                { key: 'color',      label: 'Color',         placeholder: 'Negro Mate' },
-                { key: 'cilindraje', label: 'Cilindraje',    placeholder: '847cc' },
-                { key: 'anio',       label: 'Año',           placeholder: '2024', type: 'number' },
-                { key: 'id_cliente', label: 'ID del Cliente', placeholder: '1', type: 'number' },
-              ].map(f => (
-                <div key={f.key}>
-                  <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">{f.label}</label>
-                  <input
-                    type={f.type || 'text'}
-                    required
-                    placeholder={f.placeholder}
-                    value={newMoto[f.key]}
-                    onChange={e => setNewMoto(prev => ({ ...prev, [f.key]: e.target.value }))}
-                    className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
-                  />
-                </div>
-              ))}
-              <div className="sm:col-span-2 lg:col-span-3 flex justify-end pt-2">
-                <button
-                  type="submit"
-                  disabled={formLoading}
-                  className="inline-flex items-center gap-2 bg-gradient-to-r from-brand-secondary to-brand-primary hover:brightness-110 disabled:brightness-75 disabled:cursor-not-allowed text-white font-semibold px-6 py-2.5 rounded-xl transition-all text-sm cursor-pointer"
-                >
-                  {formLoading ? (
-                    <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>Guardando...</>
-                  ) : 'Guardar Moto'}
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* ── TABLA DE MOTOS ── */}
-        <div className="glass rounded-2xl border border-white/5 overflow-hidden">
-          {/* Cabecera de tabla con búsqueda */}
-          <div className="p-5 border-b border-white/5 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
-            <h3 className="text-base font-bold text-white tracking-tight">Motocicletas en el Sistema</h3>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Buscar por placa..."
-                value={searchPlaca}
-                onChange={handleSearch}
-                className="bg-brand-bg border border-white/10 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-all w-48"
-              />
-              <svg className="w-3.5 h-3.5 text-brand-text-muted absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            {isAdmin && !isCliente && (
+              <button 
+                onClick={() => setActiveTab('usuarios')} 
+                className={`p-1.5 rounded-lg text-[11px] font-semibold ${activeTab === 'usuarios' ? 'bg-brand-primary/20 text-brand-primary' : 'text-brand-text-muted'}`}
+              >
+                Usuarios
+              </button>
+            )}
+            <button 
+              onClick={() => setActiveTab('motos')} 
+              className={`p-1.5 rounded-lg text-[11px] font-semibold ${activeTab === 'motos' ? 'bg-brand-primary/20 text-brand-primary' : 'text-brand-text-muted'}`}
+            >
+              {isCliente ? 'Mis Motos' : 'Motos'}
+            </button>
+            {!isCliente && (
+              <button 
+                onClick={() => setActiveTab('repuestos')} 
+                className={`p-1.5 rounded-lg text-[11px] font-semibold ${activeTab === 'repuestos' ? 'bg-brand-primary/20 text-brand-primary' : 'text-brand-text-muted'} relative`}
+              >
+                Repuestos
+                {lowStockCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-brand-accent-red text-[8px] font-extrabold flex items-center justify-center rounded-full text-white animate-pulse">
+                    !
+                  </span>
+                )}
+              </button>
+            )}
+            <button 
+              onClick={() => setActiveTab('ordenes')} 
+              className={`p-1.5 rounded-lg text-[11px] font-semibold ${activeTab === 'ordenes' ? 'bg-brand-primary/20 text-brand-primary' : 'text-brand-text-muted'}`}
+            >
+              {isCliente ? 'Mis Órdenes' : 'Órdenes'}
+            </button>
+            <button
+              onClick={logout}
+              className="p-1.5 ml-1 text-brand-accent-red bg-brand-accent-red/10 rounded-lg"
+              title="Salir"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
               </svg>
+            </button>
+          </div>
+
+          <div className="hidden md:flex items-center gap-3">
+            {lowStockCount > 0 && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-accent-red/10 border border-brand-accent-red/20 text-brand-accent-red rounded-xl text-xs font-semibold animate-pulse">
+                <span>Alerta Stock Bajo ({lowStockCount})</span>
+              </div>
+            )}
+            <div className="flex items-center gap-2 bg-brand-surface border border-white/5 px-3 py-1.5 rounded-xl">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-accent-green opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-accent-green"></span>
+              </span>
+              <span className="text-xs text-white font-medium">{user?.nombre}</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand-primary/20 text-brand-primary font-bold uppercase">{user?.rol}</span>
             </div>
           </div>
+        </header>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-brand-surface/40 text-[10px] text-brand-text-muted uppercase tracking-wider border-b border-white/5">
-                  <th className="px-5 py-3.5 font-semibold">Placa</th>
-                  <th className="px-5 py-3.5 font-semibold">Vehículo</th>
-                  <th className="px-5 py-3.5 font-semibold">Año</th>
-                  <th className="px-5 py-3.5 font-semibold">Cilindraje</th>
-                  <th className="px-5 py-3.5 font-semibold">Color</th>
-                  {canEdit && <th className="px-5 py-3.5 font-semibold text-right">Acciones</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5 text-xs">
-                {loading ? (
-                  // Skeleton rows
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i}>
-                      {Array.from({ length: canEdit ? 6 : 5 }).map((__, j) => (
-                        <td key={j} className="px-5 py-4">
-                          <div className="h-3 bg-white/5 rounded animate-pulse"></div>
-                        </td>
-                      ))}
-                    </tr>
-                  ))
-                ) : motos.length === 0 ? (
-                  <tr>
-                    <td colSpan={canEdit ? 6 : 5} className="px-5 py-12 text-center text-brand-text-muted">
-                      <svg className="w-10 h-10 mx-auto mb-3 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      No se encontraron motos{searchPlaca ? ` con placa "${searchPlaca}"` : ''}.
-                    </td>
-                  </tr>
-                ) : (
-                  motos.map((moto) => (
-                    <tr key={moto.id} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="px-5 py-4 font-mono font-bold text-brand-primary">{moto.placa}</td>
-                      <td className="px-5 py-4">
-                        <div className="font-semibold text-white">{moto.marca}</div>
-                        <div className="text-[10px] text-brand-text-muted">{moto.modelo}</div>
-                      </td>
-                      <td className="px-5 py-4 text-brand-text-muted">{moto.anio}</td>
-                      <td className="px-5 py-4 text-brand-text-muted">{moto.cilindraje}</td>
-                      <td className="px-5 py-4 text-brand-text-muted">{moto.color}</td>
-                      {canEdit && (
-                        <td className="px-5 py-4 text-right">
-                          <button
-                            onClick={() => handleDelete(moto)}
-                            className="text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 px-2.5 py-1 rounded-lg hover:bg-brand-accent-red/20 transition-all text-[10px] cursor-pointer"
-                          >
-                            Eliminar
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+        {/* CONTENIDO PRINCIPAL */}
+        <main className="flex-1 p-6 md:p-10 z-10 space-y-6 max-w-7xl w-full mx-auto">
+          
+          {error && (
+            <div className="p-4 bg-brand-accent-red/10 border border-brand-accent-red/20 rounded-2xl text-brand-accent-red text-xs flex items-center gap-2 animate-pulse-subtle">
+              <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span>{error} — Asegurate que la conexión a la base de datos esté activa.</span>
+            </div>
+          )}
 
-          {/* Paginación */}
-          {!loading && totalPages > 1 && (
-            <div className="p-4 border-t border-white/5 flex items-center justify-between text-xs text-brand-text-muted">
-              <span>Página <span className="text-white font-semibold">{page}</span> de <span className="text-white font-semibold">{totalPages}</span></span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="px-3 py-1.5 bg-brand-surface border border-white/10 rounded-lg hover:border-brand-primary/40 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
-                >
-                  ← Anterior
-                </button>
-                <button
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                  className="px-3 py-1.5 bg-brand-surface border border-white/10 rounded-lg hover:border-brand-primary/40 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
-                >
-                  Siguiente →
-                </button>
+          {/* ──────────────────────────────────────────────────────────────────
+              TAB 1: RESUMEN / DASHBOARD
+              ────────────────────────────────────────────────────────────────── */}
+          {/* ──────────────────────────────────────────────────────────────────
+              TAB 1: RESUMEN / DASHBOARD (CLIENTE VS PERSONAL)
+              ────────────────────────────────────────────────────────────────── */}
+          {activeTab === 'resumen' && isCliente && (
+            <div className="space-y-6">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-semibold text-brand-primary tracking-wider uppercase mb-1">
+                  <span className="w-2 h-2 rounded-full bg-brand-accent-green animate-pulse"></span>
+                  Portal del Cliente Activo
+                </div>
+                <h2 className="text-2xl font-bold text-white tracking-tight">¡Bienvenido de vuelta a tu portal, {user?.nombre}! 🏍️</h2>
+                <p className="text-xs text-brand-text-muted mt-0.5">Monitoreá el estado de tus motos y cotizaciones en tiempo real.</p>
+              </div>
+
+              {/* Métricas Personales */}
+              <div className="grid gap-5 grid-cols-1 sm:grid-cols-3">
+                <StatCard
+                  label="Mis Motocicletas"
+                  value={totalMotos}
+                  sub="Motos registradas a tu nombre"
+                  accentClass="bg-brand-primary/5 group-hover:bg-brand-primary/10"
+                  glowClass="hover:border-brand-primary/20"
+                  loading={loading}
+                  icon={
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10M21 16V10a2 2 0 00-2-2h-3V5a1 1 0 00-1-1H9" />
+                    </svg>
+                  }
+                />
+                <StatCard
+                  label="Servicios Activos"
+                  value={activeServicesCount}
+                  sub="Motos actualmente en taller"
+                  accentClass="bg-brand-secondary/5 group-hover:bg-brand-secondary/10"
+                  glowClass="hover:border-brand-secondary/20"
+                  loading={loading}
+                  icon={
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  }
+                />
+                <StatCard
+                  label="Historial de Servicios"
+                  value={totalOrdenes}
+                  sub="Total histórico de órdenes"
+                  accentClass="bg-brand-accent-green/5 group-hover:bg-brand-accent-green/10"
+                  glowClass="hover:border-brand-accent-green/20"
+                  loading={loading}
+                  icon={
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                    </svg>
+                  }
+                />
+              </div>
+
+              {/* Cuerpo del Resumen de Cliente */}
+              <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+                {/* Accesos directos del cliente */}
+                <div className="glass p-6 rounded-2xl border border-white/5 space-y-4 flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-white mb-2">Accesos Directos</h3>
+                    <p className="text-xs text-brand-text-muted">Navegá de forma rápida por tus secciones asignadas.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <button 
+                      onClick={() => setActiveTab('motos')} 
+                      className="p-5 bg-white/5 hover:bg-brand-primary/20 border border-white/5 hover:border-brand-primary/40 rounded-xl text-left transition-all cursor-pointer group"
+                    >
+                      <p className="text-sm font-bold text-white group-hover:text-brand-primary font-semibold">Mis Motocicletas →</p>
+                      <p className="text-[10px] text-brand-text-muted mt-2">Consultá las especificaciones y el historial completo de tus vehículos.</p>
+                    </button>
+                    <button 
+                      onClick={() => setActiveTab('ordenes')} 
+                      className="p-5 bg-white/5 hover:bg-brand-secondary/20 border border-white/5 hover:border-brand-secondary/40 rounded-xl text-left transition-all cursor-pointer group"
+                    >
+                      <p className="text-sm font-bold text-white group-hover:text-brand-primary font-semibold">Mis Órdenes →</p>
+                      <p className="text-[10px] text-brand-text-muted mt-2">Monitoreá el avance técnico y descargá tus cotizaciones en PDF.</p>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Tus Servicios en Curso (Timeline Compacto) */}
+                <div className="glass p-6 rounded-2xl border border-white/5 space-y-4">
+                  <h3 className="text-base font-bold text-white">Tus Servicios en Curso</h3>
+                  <div className="divide-y divide-white/5 max-h-[300px] overflow-y-auto pr-1">
+                    {loading ? (
+                      <div className="py-4 text-xs text-brand-text-muted">Cargando...</div>
+                    ) : activeServices.length === 0 ? (
+                      <div className="py-8 text-center text-xs text-brand-accent-green font-semibold bg-brand-accent-green/5 rounded-xl border border-brand-accent-green/10">
+                        ✨ Tus motocicletas están al día y listas para rodar. ¡Buen viaje!
+                      </div>
+                    ) : (
+                      activeServices.map(serv => {
+                        const motoObj = motos.find(m => m.id === serv.id_moto);
+                        return (
+                          <div key={serv.id_orden_trabajo} className="py-3 flex items-center justify-between text-xs gap-3">
+                            <div className="flex items-center gap-3">
+                              <span className="px-2 py-0.5 font-mono font-bold text-[10px] rounded border bg-brand-primary/10 border-brand-primary/20 text-brand-primary">
+                                {motoObj ? motoObj.placa : (serv.placa_moto || 'Moto')}
+                              </span>
+                              <div>
+                                <p className="font-semibold text-white">Orden #{serv.id_orden_trabajo}</p>
+                                <p className="text-[10px] text-brand-text-muted">
+                                  {motoObj ? `${motoObj.marca} ${motoObj.modelo}` : 'Vehículo'}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 text-right">
+                              <div>
+                                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold border ${
+                                  serv.estado === 'Recepcion'
+                                    ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/20'
+                                    : serv.estado === 'Diagnostico'
+                                      ? 'bg-brand-accent-yellow/10 text-brand-accent-yellow border-brand-accent-yellow/20'
+                                      : serv.estado === 'Cotizacion'
+                                        ? 'bg-brand-accent-purple/10 text-brand-accent-purple border-brand-accent-purple/20'
+                                        : 'bg-brand-accent-blue/10 text-brand-accent-blue border-brand-accent-blue/20'
+                                }`}>
+                                  {serv.estado}
+                                </span>
+                              </div>
+                              <button 
+                                onClick={() => setActiveTab('ordenes')}
+                                className="text-[10px] text-brand-primary hover:underline font-semibold"
+                              >
+                                Detalles
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           )}
+
+          {activeTab === 'resumen' && !isCliente && (
+            <div className="space-y-6">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-semibold text-brand-primary tracking-wider uppercase mb-1">
+                  <span className="w-2 h-2 rounded-full bg-brand-primary animate-ping"></span>
+                  Conexión API: OK
+                </div>
+                <h2 className="text-2xl font-bold text-white tracking-tight">Bienvenido de vuelta, {user?.nombre} 👋</h2>
+                <p className="text-xs text-brand-text-muted mt-0.5">Métricas de control del taller a la fecha.</p>
+              </div>
+
+              {/* Stat Cards */}
+              <div className="grid gap-5 grid-cols-1 sm:grid-cols-4">
+                <StatCard
+                  label="Motos Registradas"
+                  value={totalMotos}
+                  sub="Total en base de datos"
+                  accentClass="bg-brand-primary/5 group-hover:bg-brand-primary/10"
+                  glowClass="hover:border-brand-primary/20"
+                  loading={loading}
+                  icon={
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10M21 16V10a2 2 0 00-2-2h-3V5a1 1 0 00-1-1H9" />
+                    </svg>
+                  }
+                />
+                <StatCard
+                  label="Clientes Activos"
+                  value={totalClientes}
+                  sub="Usuarios registrados"
+                  accentClass="bg-brand-secondary/5 group-hover:bg-brand-secondary/10"
+                  glowClass="hover:border-brand-secondary/20"
+                  loading={loading}
+                  icon={
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  }
+                />
+                <StatCard
+                  label="Repuestos Totales"
+                  value={totalRepuestos}
+                  sub="Referencias cargadas"
+                  accentClass="bg-brand-accent-green/5 group-hover:bg-brand-accent-green/10"
+                  glowClass="hover:border-brand-accent-green/20"
+                  loading={loading}
+                  icon={
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                    </svg>
+                  }
+                />
+                <div className={`glass p-6 rounded-2xl border border-white/5 relative overflow-hidden group transition-all duration-300 hover:scale-[1.02] ${lowStockCount > 0 ? 'hover:border-brand-accent-red/30' : ''}`}>
+                  <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl transition-all ${lowStockCount > 0 ? 'bg-brand-accent-red/10' : 'bg-brand-accent-green/5'}`}></div>
+                  <div className="flex justify-between items-start z-10 relative">
+                    <div>
+                      <span className="text-xs text-brand-text-muted uppercase font-bold tracking-wider">Alertas Stock</span>
+                      <h3 className={`text-3xl font-extrabold mt-2 mb-1 ${lowStockCount > 0 ? 'text-brand-accent-red animate-pulse' : 'text-brand-accent-green'}`}>
+                        {lowStockCount}
+                      </h3>
+                      <p className="text-xs text-brand-text-muted">{lowStockCount > 0 ? 'Repuestos bajo stock mínimo' : 'Inventario al día'}</p>
+                    </div>
+                    <div className={`p-3 rounded-xl ${lowStockCount > 0 ? 'bg-brand-accent-red/15 text-brand-accent-red' : 'bg-brand-accent-green/15 text-brand-accent-green'}`}>
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Accesos directos rápidos */}
+              <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+                <div className="glass p-6 rounded-2xl border border-white/5 space-y-4">
+                  <h3 className="text-base font-bold text-white">Navegación Rápida</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button 
+                      onClick={() => setActiveTab('clientes')} 
+                      className="p-4 bg-white/5 hover:bg-brand-secondary/20 border border-white/5 hover:border-brand-secondary/40 rounded-xl text-left transition-all cursor-pointer group"
+                    >
+                      <p className="text-sm font-bold text-white group-hover:text-brand-primary font-semibold">Clientes →</p>
+                      <p className="text-[11px] text-brand-text-muted mt-1">Registrar clientes, modificar accesos y asignar motos.</p>
+                    </button>
+                    <button 
+                      onClick={() => setActiveTab('repuestos')} 
+                      className="p-4 bg-white/5 hover:bg-brand-primary/20 border border-white/5 hover:border-brand-primary/40 rounded-xl text-left transition-all cursor-pointer group"
+                    >
+                      <p className="text-sm font-bold text-white group-hover:text-brand-primary font-semibold">Repuestos →</p>
+                      <p className="text-[11px] text-brand-text-muted mt-1">Control de inventario, stock crítico y alertas visuales.</p>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Repuestos críticos en la pantalla principal */}
+                <div className="glass p-6 rounded-2xl border border-white/5 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-base font-bold text-white">Alertas de Repuestos Críticos</h3>
+                    <button onClick={() => setActiveTab('repuestos')} className="text-xs text-brand-primary hover:underline">Ver todo el stock</button>
+                  </div>
+                  <div className="divide-y divide-white/5">
+                    {loading ? (
+                      <div className="py-3 text-xs text-brand-text-muted">Cargando...</div>
+                    ) : repuestos.filter(r => r.stock <= STOCK_BAJO).length === 0 ? (
+                      <div className="py-6 text-center text-xs text-brand-accent-green font-semibold bg-brand-accent-green/5 rounded-xl border border-brand-accent-green/10">
+                        ✨ ¡Todos los repuestos tienen niveles óptimos de stock!
+                      </div>
+                    ) : (
+                      repuestos.filter(r => r.stock <= STOCK_BAJO).slice(0, 3).map(r => (
+                        <div key={r.id_repuesto} className="py-2.5 flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-3">
+                            <span className={`px-2 py-0.5 font-mono font-bold text-[10px] rounded border ${
+                              r.stock <= STOCK_CRITICO 
+                                ? 'bg-brand-accent-red/20 border-brand-accent-red/30 text-brand-accent-red animate-pulse' 
+                                : 'bg-brand-accent-yellow/20 border-brand-accent-yellow/30 text-brand-accent-yellow'
+                            }`}>
+                              Ref: {r.referencia}
+                            </span>
+                            <div>
+                              <p className="font-semibold text-white">{r.nombre}</p>
+                              <p className="text-[10px] text-brand-text-muted">Unitario: {r.precio.toLocaleString('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })} COP</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className={`text-xs font-extrabold ${r.stock <= STOCK_CRITICO ? 'text-brand-accent-red animate-pulse' : 'text-brand-accent-yellow'}`}>
+                              {r.stock} u.
+                            </span>
+                            <span className="block text-[8px] text-brand-text-muted">
+                              {r.stock <= STOCK_CRITICO ? 'Reabastecer Ya' : 'Bajo Stock'}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ──────────────────────────────────────────────────────────────────
+              TAB 2: GESTIÓN DE CLIENTES
+              ────────────────────────────────────────────────────────────────── */}
+          {activeTab === 'clientes' && (
+            <div className="space-y-6">
+              {showClienteForm && canEditClientes && (
+                <div className="glass rounded-2xl border border-white/10 p-6 animate-float-subtle">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-base font-bold text-white">
+                      {selectedCliente ? `Editar Cliente: ${selectedCliente.nombre}` : 'Registrar Nuevo Cliente'}
+                    </h3>
+                    <button 
+                      onClick={() => { setShowClienteForm(false); setSelectedCliente(null); }} 
+                      className="text-xs text-brand-text-muted hover:text-white"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+
+                  {clienteFormError && (
+                    <div className="mb-4 text-xs text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 rounded-xl px-4 py-3">
+                      {clienteFormError}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleCreateOrUpdateCliente} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Nombre Completo</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej. Juan Pérez"
+                        value={newCliente.nombre}
+                        onChange={e => setNewCliente(prev => ({ ...prev, nombre: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Correo Electrónico</label>
+                      <input
+                        type="email"
+                        required
+                        placeholder="Ej. juan@correo.com"
+                        value={newCliente.correo}
+                        onChange={e => setNewCliente(prev => ({ ...prev, correo: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Cédula de Ciudadanía</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej. 1020304050"
+                        value={newCliente.cedula}
+                        onChange={e => setNewCliente(prev => ({ ...prev, cedula: e.target.value.replace(/\D/g, '') }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Teléfono de Contacto</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej. 3123456789"
+                        value={newCliente.telefono}
+                        onChange={e => setNewCliente(prev => ({ ...prev, telefono: e.target.value.replace(/\D/g, '') }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">
+                        {selectedCliente ? 'Nueva Contraseña (Dejar vacío para mantener)' : 'Contraseña de Acceso'}
+                      </label>
+                      <input
+                        type="password"
+                        required={!selectedCliente}
+                        placeholder="Mínimo 8 car., Mayúscula, Número y Especial"
+                        value={newCliente.password}
+                        onChange={e => setNewCliente(prev => ({ ...prev, password: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                      <span className="text-[9px] text-brand-text-muted block mt-1">Requisitos: Mínimo 8 caracteres, 1 Mayúscula, 1 Número y 1 Carácter Especial.</span>
+                    </div>
+
+                    <div className="sm:col-span-2 flex justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => { setShowClienteForm(false); setSelectedCliente(null); }}
+                        className="bg-white/5 hover:bg-white/10 text-white font-semibold px-5 py-2.5 rounded-xl text-xs transition-all cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={clienteFormLoading}
+                        className="inline-flex items-center gap-2 bg-gradient-to-r from-brand-secondary to-brand-primary hover:brightness-110 disabled:brightness-75 disabled:cursor-not-allowed text-white font-semibold px-6 py-2.5 rounded-xl transition-all text-xs cursor-pointer"
+                      >
+                        {clienteFormLoading ? 'Guardando...' : 'Guardar Cliente'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Listado con filtros y buscador */}
+              <div className="glass rounded-2xl border border-white/5 overflow-hidden">
+                <div className="p-5 border-b border-white/5 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-white tracking-tight">Listado de Clientes</h3>
+                    <p className="text-[11px] text-brand-text-muted">Usuarios que acceden al sistema para ver sus motos.</p>
+                  </div>
+                  
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Buscar cliente..."
+                        value={searchCliente}
+                        onChange={handleClienteSearch}
+                        className="bg-brand-bg border border-white/10 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-all w-full sm:w-64"
+                      />
+                      <svg className="w-3.5 h-3.5 text-brand-text-muted absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </div>
+
+                    {canEditClientes && (
+                      <button
+                        onClick={() => { setSelectedCliente(null); setNewCliente({ nombre: '', correo: '', cedula: '', telefono: '', password: '', rol: 'cliente' }); setShowClienteForm(true); }}
+                        className="bg-gradient-to-r from-brand-secondary to-brand-primary text-white font-semibold px-4 py-2 rounded-xl transition-all text-xs cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                        Nuevo Cliente
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-brand-surface/40 text-[10px] text-brand-text-muted uppercase tracking-wider border-b border-white/5">
+                        <th className="px-5 py-3.5 font-semibold">Nombre</th>
+                        <th className="px-5 py-3.5 font-semibold">Cédula</th>
+                        <th className="px-5 py-3.5 font-semibold">Correo</th>
+                        <th className="px-5 py-3.5 font-semibold">Teléfono</th>
+                        <th className="px-5 py-3.5 font-semibold">Motos Propias</th>
+                        <th className="px-5 py-3.5 font-semibold">Estado</th>
+                        {canEditClientes && <th className="px-5 py-3.5 font-semibold text-right">Acciones</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 text-xs">
+                      {loading ? (
+                        Array.from({ length: 4 }).map((_, i) => (
+                          <tr key={i}>
+                            {Array.from({ length: canEditClientes ? 7 : 6 }).map((__, j) => (
+                              <td key={j} className="px-5 py-4">
+                                <div className="h-3 bg-white/5 rounded animate-pulse"></div>
+                              </td>
+                            ))}
+                          </tr>
+                        ))
+                      ) : clientes.length === 0 ? (
+                        <tr>
+                          <td colSpan={canEditClientes ? 7 : 6} className="px-5 py-12 text-center text-brand-text-muted">
+                            No se encontraron clientes registrados en el sistema.
+                          </td>
+                        </tr>
+                      ) : (
+                        clientes.map((c) => {
+                          const ownedMotos = motos.filter(m => m.id_propietario === c.id);
+                          return (
+                            <tr key={c.id} className="hover:bg-white/[0.01] transition-colors">
+                              <td className="px-5 py-4 font-semibold text-white">{c.nombre}</td>
+                              <td className="px-5 py-4 text-brand-text-muted font-mono">{c.cedula || '-'}</td>
+                              <td className="px-5 py-4 text-brand-text-muted">{c.correo}</td>
+                              <td className="px-5 py-4 text-brand-text-muted font-mono">{c.telefono || '-'}</td>
+                              <td className="px-5 py-4">
+                                {ownedMotos.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {ownedMotos.map(m => (
+                                      <span key={m.id} className="px-1.5 py-0.5 rounded bg-brand-primary/10 border border-brand-primary/20 text-brand-primary text-[10px] font-mono font-bold">
+                                        {m.placa}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-[10px] text-brand-text-muted italic">Ninguna</span>
+                                )}
+                              </td>
+                              <td className="px-5 py-4">
+                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${
+                                  c.is_active 
+                                    ? 'bg-brand-accent-green/10 text-brand-accent-green border-brand-accent-green/20' 
+                                    : 'bg-brand-accent-red/10 text-brand-accent-red border-brand-accent-red/20'
+                                }`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${c.is_active ? 'bg-brand-accent-green' : 'bg-brand-accent-red'}`}></span>
+                                  {c.is_active ? 'Activo' : 'Inactivo'}
+                                </span>
+                              </td>
+                              {canEditClientes && (
+                                <td className="px-5 py-4 text-right flex justify-end gap-2">
+                                  <button
+                                    onClick={() => handleToggleClienteActive(c)}
+                                    className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                                      c.is_active 
+                                        ? 'text-brand-accent-yellow border-brand-accent-yellow/20 bg-brand-accent-yellow/5 hover:bg-brand-accent-yellow/20' 
+                                        : 'text-brand-accent-green border-brand-accent-green/20 bg-brand-accent-green/5 hover:bg-brand-accent-green/20'
+                                    }`}
+                                  >
+                                    {c.is_active ? 'Desactivar' : 'Activar'}
+                                  </button>
+                                  <button
+                                    onClick={() => handleEditClienteClick(c)}
+                                    className="text-brand-primary bg-brand-primary/10 border border-brand-primary/20 px-2 py-1 rounded-lg hover:bg-brand-primary/20 transition-all text-[10px] cursor-pointer"
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteCliente(c)}
+                                    className="text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 px-2 py-1 rounded-lg hover:bg-brand-accent-red/20 transition-all text-[10px] cursor-pointer"
+                                  >
+                                    Eliminar
+                                  </button>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ──────────────────────────────────────────────────────────────────
+              TAB 2.5: GESTIÓN DE USUARIOS (EXCLUSIVO ADMINISTRADOR)
+              ────────────────────────────────────────────────────────────────── */}
+          {activeTab === 'usuarios' && isAdmin && (
+            <div className="space-y-6">
+              {showUsuarioForm && canEditUsuarios && (
+                <div className="glass rounded-2xl border border-white/10 p-6 animate-float-subtle">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-base font-bold text-white">
+                      {selectedUsuario ? `Editar Usuario: ${selectedUsuario.nombre}` : 'Registrar Nuevo Usuario del Sistema'}
+                    </h3>
+                    <button 
+                      onClick={() => { setShowUsuarioForm(false); setSelectedUsuario(null); }} 
+                      className="text-xs text-brand-text-muted hover:text-white"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+
+                  {usuarioFormError && (
+                    <div className="mb-4 text-xs text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 rounded-xl px-4 py-3">
+                      {usuarioFormError}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleCreateOrUpdateUsuario} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Nombre Completo</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej. Pedro Gómez"
+                        value={newUsuario.nombre}
+                        onChange={e => setNewUsuario(prev => ({ ...prev, nombre: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Correo Electrónico</label>
+                      <input
+                        type="email"
+                        required
+                        placeholder="Ej. pedro@motoboss.com"
+                        value={newUsuario.correo}
+                        onChange={e => setNewUsuario(prev => ({ ...prev, correo: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Cédula</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej. 987654321"
+                        value={newUsuario.cedula}
+                        onChange={e => setNewUsuario(prev => ({ ...prev, cedula: e.target.value.replace(/\D/g, '') }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Teléfono</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej. 3009876543"
+                        value={newUsuario.telefono}
+                        onChange={e => setNewUsuario(prev => ({ ...prev, telefono: e.target.value.replace(/\D/g, '') }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Rol asignado</label>
+                      <select
+                        disabled={!!selectedUsuario}
+                        value={newUsuario.rol}
+                        onChange={e => setNewUsuario(prev => ({ ...prev, rol: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all disabled:opacity-40"
+                      >
+                        <option value="empleado">Mecánico (Empleado de Soporte)</option>
+                        <option value="cliente">Cliente (Dueño de Moto)</option>
+                      </select>
+                      {selectedUsuario && (
+                        <span className="text-[9px] text-brand-accent-yellow mt-1 block">El rol no puede cambiarse tras la creación.</span>
+                      )}
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">
+                        {selectedUsuario ? 'Nueva Contraseña (Dejar vacío para mantener)' : 'Contraseña de Acceso'}
+                      </label>
+                      <input
+                        type="password"
+                        required={!selectedUsuario}
+                        placeholder="Mínimo 8 car., Mayúscula, Número y Especial"
+                        value={newUsuario.password}
+                        onChange={e => setNewUsuario(prev => ({ ...prev, password: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                      <span className="text-[9px] text-brand-text-muted block mt-1">Requisitos: Mínimo 8 caracteres, 1 Mayúscula, 1 Número y 1 Carácter Especial.</span>
+                    </div>
+
+                    <div className="sm:col-span-2 flex justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => { setShowUsuarioForm(false); setSelectedUsuario(null); }}
+                        className="bg-white/5 hover:bg-white/10 text-white font-semibold px-5 py-2.5 rounded-xl text-xs transition-all cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={usuarioFormLoading}
+                        className="inline-flex items-center gap-2 bg-gradient-to-r from-brand-secondary to-brand-primary hover:brightness-110 disabled:brightness-75 disabled:cursor-not-allowed text-white font-semibold px-6 py-2.5 rounded-xl transition-all text-xs cursor-pointer"
+                      >
+                        {usuarioFormLoading ? 'Guardando...' : 'Guardar Usuario'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Listado con filtros y buscador */}
+              <div className="glass rounded-2xl border border-white/5 overflow-hidden">
+                <div className="p-5 border-b border-white/5 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-white tracking-tight">Gestión de Usuarios</h3>
+                    <p className="text-[11px] text-brand-text-muted">Administración global de accesos para mecánicos, administradores y clientes.</p>
+                  </div>
+                  
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    <div>
+                      <select
+                        value={filterUsuarioRol}
+                        onChange={e => { setFilterUsuarioRol(e.target.value); setUsuariosPage(1); }}
+                        className="bg-brand-bg border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-primary transition-all w-full"
+                      >
+                        <option value="">Todos los Roles</option>
+                        <option value="admin">Administradores</option>
+                        <option value="empleado">Mecánicos (Empleados)</option>
+                        <option value="cliente">Clientes</option>
+                      </select>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Buscar usuario..."
+                        value={searchUsuario}
+                        onChange={handleUsuarioSearch}
+                        className="bg-brand-bg border border-white/10 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-all w-full sm:w-48"
+                      />
+                      <svg className="w-3.5 h-3.5 text-brand-text-muted absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </div>
+
+                    {canEditUsuarios && (
+                      <button
+                        onClick={() => { setSelectedUsuario(null); setNewUsuario({ nombre: '', correo: '', cedula: '', telefono: '', password: '', rol: 'empleado' }); setShowUsuarioForm(true); }}
+                        className="bg-gradient-to-r from-brand-secondary to-brand-primary text-white font-semibold px-4 py-2 rounded-xl transition-all text-xs cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                        Nuevo Usuario
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-brand-surface/40 text-[10px] text-brand-text-muted uppercase tracking-wider border-b border-white/5">
+                        <th className="px-5 py-3.5 font-semibold">Nombre</th>
+                        <th className="px-5 py-3.5 font-semibold">Rol</th>
+                        <th className="px-5 py-3.5 font-semibold">Cédula</th>
+                        <th className="px-5 py-3.5 font-semibold">Correo</th>
+                        <th className="px-5 py-3.5 font-semibold">Teléfono</th>
+                        <th className="px-5 py-3.5 font-semibold">Estado</th>
+                        {canEditUsuarios && <th className="px-5 py-3.5 font-semibold text-right">Acciones</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 text-xs">
+                      {loading ? (
+                        Array.from({ length: 4 }).map((_, i) => (
+                          <tr key={i}>
+                            {Array.from({ length: canEditUsuarios ? 7 : 6 }).map((__, j) => (
+                              <td key={j} className="px-5 py-4">
+                                <div className="h-3 bg-white/5 rounded animate-pulse"></div>
+                              </td>
+                            ))}
+                          </tr>
+                        ))
+                      ) : usuarios.length === 0 ? (
+                        <tr>
+                          <td colSpan={canEditUsuarios ? 7 : 6} className="px-5 py-12 text-center text-brand-text-muted">
+                            No se encontraron usuarios en el sistema.
+                          </td>
+                        </tr>
+                      ) : (
+                        usuarios.map((u) => {
+                          return (
+                            <tr key={u.id} className="hover:bg-white/[0.01] transition-colors">
+                              <td className="px-5 py-4 font-semibold text-white">{u.nombre}</td>
+                              <td className="px-5 py-4">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
+                                  u.rol === 'admin' 
+                                    ? 'bg-brand-accent-red/10 text-brand-accent-red border-brand-accent-red/20'
+                                    : u.rol === 'empleado'
+                                      ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/20'
+                                      : 'bg-brand-accent-green/10 text-brand-accent-green border-brand-accent-green/20'
+                                }`}>
+                                  {u.rol}
+                                </span>
+                              </td>
+                              <td className="px-5 py-4 text-brand-text-muted font-mono">{u.cedula || '-'}</td>
+                              <td className="px-5 py-4 text-brand-text-muted">{u.correo}</td>
+                              <td className="px-5 py-4 text-brand-text-muted font-mono">{u.telefono || '-'}</td>
+                              <td className="px-5 py-4">
+                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${
+                                  u.is_active 
+                                    ? 'bg-brand-accent-green/10 text-brand-accent-green border-brand-accent-green/20' 
+                                    : 'bg-brand-accent-red/10 text-brand-accent-red border-brand-accent-red/20'
+                                }`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${u.is_active ? 'bg-brand-accent-green' : 'bg-brand-accent-red'}`}></span>
+                                  {u.is_active ? 'Activo' : 'Inactivo'}
+                                </span>
+                              </td>
+                              {canEditUsuarios && (
+                                <td className="px-5 py-4 text-right flex justify-end gap-2">
+                                  <button
+                                    onClick={() => handleToggleUsuarioActive(u)}
+                                    disabled={u.id === user.id || u.rol === 'admin'}
+                                    className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
+                                      u.is_active 
+                                        ? 'text-brand-accent-yellow border-brand-accent-yellow/20 bg-brand-accent-yellow/5 hover:bg-brand-accent-yellow/20' 
+                                        : 'text-brand-accent-green border-brand-accent-green/20 bg-brand-accent-green/5 hover:bg-brand-accent-green/20'
+                                    }`}
+                                  >
+                                    {u.is_active ? 'Desactivar' : 'Activar'}
+                                  </button>
+                                  <button
+                                    onClick={() => handleEditUsuarioClick(u)}
+                                    className="text-brand-primary bg-brand-primary/10 border border-brand-primary/20 px-2 py-1 rounded-lg hover:bg-brand-primary/20 transition-all text-[10px] cursor-pointer"
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteUsuario(u)}
+                                    disabled={u.id === user.id}
+                                    className="text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 px-2 py-1 rounded-lg hover:bg-brand-accent-red/20 transition-all text-[10px] cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                                  >
+                                    Eliminar
+                                  </button>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ──────────────────────────────────────────────────────────────────
+              TAB 3: GESTIÓN DE MOTOCICLETAS
+              ────────────────────────────────────────────────────────────────── */}
+          {activeTab === 'motos' && (
+            <div className="space-y-6">
+              {showMotoForm && canEditMotos && (
+                <div className="glass rounded-2xl border border-white/10 p-6 animate-float-subtle">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-base font-bold text-white">
+                      {selectedMoto ? `Editar Motocicleta: ${selectedMoto.placa}` : 'Registrar Nueva Motocicleta'}
+                    </h3>
+                    <button 
+                      onClick={() => { setShowMotoForm(false); setSelectedMoto(null); }} 
+                      className="text-xs text-brand-text-muted hover:text-white"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+
+                  {motoFormError && (
+                    <div className="mb-4 text-xs text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 rounded-xl px-4 py-3">
+                      {motoFormError}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleCreateOrUpdateMoto} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Placa</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej. ABC-123"
+                        disabled={!!selectedMoto}
+                        value={newMoto.placa}
+                        onChange={e => setNewMoto(prev => ({ ...prev, placa: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all disabled:opacity-40"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Marca</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej. Yamaha"
+                        value={newMoto.marca}
+                        onChange={e => setNewMoto(prev => ({ ...prev, marca: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Modelo</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej. MT-09"
+                        value={newMoto.modelo}
+                        onChange={e => setNewMoto(prev => ({ ...prev, modelo: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Color</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej. Negro Mate"
+                        value={newMoto.color}
+                        onChange={e => setNewMoto(prev => ({ ...prev, color: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Cilindraje</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej. 847cc"
+                        value={newMoto.cilindraje}
+                        onChange={e => setNewMoto(prev => ({ ...prev, cilindraje: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Año Modelo</label>
+                      <input
+                        type="number"
+                        required
+                        min="1901"
+                        placeholder="Ej. 2024"
+                        value={newMoto.anio}
+                        onChange={e => setNewMoto(prev => ({ ...prev, anio: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Propietario / Cliente</label>
+                      <select
+                        required
+                        value={newMoto.id_propietario}
+                        onChange={e => setNewMoto(prev => ({ ...prev, id_propietario: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      >
+                        <option value="">-- Seleccionar Propietario --</option>
+                        {allUsers.filter(u => u.rol === 'cliente').map(u => (
+                          <option key={u.id} value={u.id} className="bg-brand-surface text-white">
+                            {u.nombre} ({u.correo})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="lg:col-span-3 flex justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => { setShowMotoForm(false); setSelectedMoto(null); }}
+                        className="bg-white/5 hover:bg-white/10 text-white font-semibold px-5 py-2.5 rounded-xl text-xs transition-all cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={motoFormLoading}
+                        className="inline-flex items-center gap-2 bg-gradient-to-r from-brand-secondary to-brand-primary hover:brightness-110 disabled:brightness-75 disabled:cursor-not-allowed text-white font-semibold px-6 py-2.5 rounded-xl transition-all text-xs cursor-pointer"
+                      >
+                        {motoFormLoading ? 'Guardando...' : 'Guardar Motocicleta'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Tabla de motos */}
+              <div className="glass rounded-2xl border border-white/5 overflow-hidden">
+                <div className="p-5 border-b border-white/5 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-white tracking-tight">Motocicletas Registradas</h3>
+                    <p className="text-[11px] text-brand-text-muted">Lista total de placas activas y sus especificaciones técnicas.</p>
+                  </div>
+                  
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Buscar por placa..."
+                        value={searchPlaca}
+                        onChange={handlePlacaSearch}
+                        className="bg-brand-bg border border-white/10 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-all w-full sm:w-48"
+                      />
+                      <svg className="w-3.5 h-3.5 text-brand-text-muted absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </div>
+
+                    {canEditMotos && (
+                      <button
+                        onClick={() => { setSelectedMoto(null); setNewMoto({ placa: '', marca: '', modelo: '', color: '', cilindraje: '', anio: new Date().getFullYear(), id_propietario: '' }); setShowMotoForm(true); }}
+                        className="bg-gradient-to-r from-brand-secondary to-brand-primary text-white font-semibold px-4 py-2 rounded-xl transition-all text-xs cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                        Nueva Moto
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-brand-surface/40 text-[10px] text-brand-text-muted uppercase tracking-wider border-b border-white/5">
+                        <th className="px-5 py-3.5 font-semibold">Placa</th>
+                        <th className="px-5 py-3.5 font-semibold">Vehículo</th>
+                        <th className="px-5 py-3.5 font-semibold">Año / Color</th>
+                        <th className="px-5 py-3.5 font-semibold">Cilindraje</th>
+                        <th className="px-5 py-3.5 font-semibold">Dueño</th>
+                        <th className="px-5 py-3.5 font-semibold text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 text-xs">
+                      {loading ? (
+                        Array.from({ length: 4 }).map((_, i) => (
+                          <tr key={i}>
+                            {Array.from({ length: 6 }).map((__, j) => (
+                              <td key={j} className="px-5 py-4">
+                                <div className="h-3 bg-white/5 rounded animate-pulse"></div>
+                              </td>
+                            ))}
+                          </tr>
+                        ))
+                      ) : motos.length === 0 ? (
+                        <tr>
+                          <td colSpan="6" className="px-5 py-12 text-center text-brand-text-muted">
+                            No se encontraron motos en la base de datos.
+                          </td>
+                        </tr>
+                      ) : (
+                        motos.map((m) => (
+                          <tr key={m.id} className="hover:bg-white/[0.01] transition-colors">
+                            <td className="px-5 py-4 font-mono font-bold text-brand-primary text-sm">{m.placa}</td>
+                            <td className="px-5 py-4">
+                              <span className="font-bold text-white block">{m.marca}</span>
+                              <span className="text-[10px] text-brand-text-muted">{m.modelo}</span>
+                            </td>
+                            <td className="px-5 py-4 text-brand-text-muted">
+                              <span>{m.anio}</span> · <span className="text-[10px]">{m.color}</span>
+                            </td>
+                            <td className="px-5 py-4 text-brand-text-muted font-mono">{m.cilindraje}</td>
+                            <td className="px-5 py-4 font-semibold text-white">
+                              {getPropietarioName(m.id_propietario)}
+                            </td>
+                            <td className="px-5 py-4 text-right flex justify-end gap-2">
+                              <button
+                                onClick={() => setServiceHistoryMoto(m)}
+                                className="text-brand-accent-green bg-brand-accent-green/10 border border-brand-accent-green/20 px-2 py-1 rounded-lg hover:bg-brand-accent-green/20 transition-all text-[10px] cursor-pointer"
+                              >
+                                Historial
+                              </button>
+                              {canEditMotos && (
+                                <>
+                                  <button
+                                    onClick={() => handleEditMotoClick(m)}
+                                    className="text-brand-primary bg-brand-primary/10 border border-brand-primary/20 px-2 py-1 rounded-lg hover:bg-brand-primary/20 transition-all text-[10px] cursor-pointer"
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteMoto(m)}
+                                    className="text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 px-2 py-1 rounded-lg hover:bg-brand-accent-red/20 transition-all text-[10px] cursor-pointer"
+                                  >
+                                    Eliminar
+                                  </button>
+                                </>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ──────────────────────────────────────────────────────────────────
+              TAB 4: INVENTARIO DE REPUESTOS (PUNTO 4)
+              ────────────────────────────────────────────────────────────────── */}
+          {activeTab === 'repuestos' && (
+            <div className="space-y-6">
+
+              {/* Formulario Repuesto */}
+              {showRepuestoForm && canEditRepuestos && (
+                <div className="glass rounded-2xl border border-white/10 p-6 animate-float-subtle">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-base font-bold text-white">
+                      {selectedRepuesto ? `Modificar Repuesto: ${selectedRepuesto.referencia}` : 'Cargar Nuevo Repuesto al Inventario'}
+                    </h3>
+                    <button 
+                      onClick={() => { setShowRepuestoForm(false); setSelectedRepuesto(null); }} 
+                      className="text-xs text-brand-text-muted hover:text-white"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+
+                  {repuestoFormError && (
+                    <div className="mb-4 text-xs text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 rounded-xl px-4 py-3">
+                      {repuestoFormError}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleCreateOrUpdateRepuesto} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider font-mono">Referencia Única</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej. REF-50023"
+                        disabled={!!selectedRepuesto}
+                        value={newRepuesto.referencia}
+                        onChange={e => setNewRepuesto(prev => ({ ...prev, referencia: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all disabled:opacity-40 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Nombre del Repuesto</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej. Pastillas Brembo Delanteras"
+                        value={newRepuesto.nombre}
+                        onChange={e => setNewRepuesto(prev => ({ ...prev, nombre: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Cantidad en Stock</label>
+                      <input
+                        type="number"
+                        required
+                        min="0"
+                        placeholder="Ej. 15"
+                        value={newRepuesto.stock}
+                        onChange={e => setNewRepuesto(prev => ({ ...prev, stock: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Precio Unitario (COP)</label>
+                      <input
+                        type="number"
+                        required
+                        min="0"
+                        step="0.01"
+                        placeholder="Ej. 120000"
+                        value={newRepuesto.precio}
+                        onChange={e => setNewRepuesto(prev => ({ ...prev, precio: e.target.value }))}
+                        className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                      />
+                    </div>
+
+                    <div className="lg:col-span-4 flex justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => { setShowRepuestoForm(false); setSelectedRepuesto(null); }}
+                        className="bg-white/5 hover:bg-white/10 text-white font-semibold px-5 py-2.5 rounded-xl text-xs transition-all cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={repuestoFormLoading}
+                        className="inline-flex items-center gap-2 bg-gradient-to-r from-brand-secondary to-brand-primary hover:brightness-110 disabled:brightness-75 disabled:cursor-not-allowed text-white font-semibold px-6 py-2.5 rounded-xl transition-all text-xs cursor-pointer"
+                      >
+                        {repuestoFormLoading ? 'Guardando...' : 'Guardar Repuesto'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Tabla de repuestos */}
+              <div className="glass rounded-2xl border border-white/5 overflow-hidden">
+                <div className="p-5 border-b border-white/5 flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-white tracking-tight">Control de Inventario</h3>
+                    <p className="text-[11px] text-brand-text-muted">Lista y auditoría en tiempo real de repuestos e insumos del taller.</p>
+                  </div>
+                  
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Filtrar Referencia..."
+                        value={searchRepuestoRef}
+                        onChange={handleRepuestoSearchRef}
+                        className="bg-brand-bg border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-all w-28 sm:w-36 font-mono"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Filtrar Nombre..."
+                        value={searchRepuestoNombre}
+                        onChange={handleRepuestoSearchName}
+                        className="bg-brand-bg border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-all w-28 sm:w-36"
+                      />
+                    </div>
+
+                    {canEditRepuestos && (
+                      <button
+                        onClick={() => { setSelectedRepuesto(null); setNewRepuesto({ referencia: '', nombre: '', stock: 0, precio: 0 }); setShowRepuestoForm(true); }}
+                        className="bg-gradient-to-r from-brand-secondary to-brand-primary text-white font-semibold px-4 py-2 rounded-xl transition-all text-xs cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                        Cargar Repuesto
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-brand-surface/40 text-[10px] text-brand-text-muted uppercase tracking-wider border-b border-white/5">
+                        <th className="px-5 py-3.5 font-semibold">Ref. única</th>
+                        <th className="px-5 py-3.5 font-semibold">Nombre del repuesto</th>
+                        <th className="px-5 py-3.5 font-semibold">Precio Unitario</th>
+                        <th className="px-5 py-3.5 font-semibold">Stock</th>
+                        <th className="px-5 py-3.5 font-semibold">Nivel Stock</th>
+                        {canEditRepuestos && <th className="px-5 py-3.5 font-semibold text-right">Acciones</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 text-xs">
+                      {loading ? (
+                        Array.from({ length: 4 }).map((_, i) => (
+                          <tr key={i}>
+                            {Array.from({ length: canEditRepuestos ? 6 : 5 }).map((__, j) => (
+                              <td key={j} className="px-5 py-4">
+                                <div className="h-3 bg-white/5 rounded animate-pulse"></div>
+                              </td>
+                            ))}
+                          </tr>
+                        ))
+                      ) : repuestos.length === 0 ? (
+                        <tr>
+                          <td colSpan={canEditRepuestos ? 6 : 5} className="px-5 py-12 text-center text-brand-text-muted">
+                            No se encontraron repuestos registrados.
+                          </td>
+                        </tr>
+                      ) : (
+                        repuestos.map((r) => {
+                          const isCritico = r.stock <= STOCK_CRITICO;
+                          const isBajo = r.stock <= STOCK_BAJO && r.stock > STOCK_CRITICO;
+                          return (
+                            <tr key={r.id_repuesto} className="hover:bg-white/[0.01] transition-colors">
+                              <td className="px-5 py-4 font-mono font-bold text-brand-primary">{r.referencia}</td>
+                              <td className="px-5 py-4 font-medium text-white">{r.nombre}</td>
+                              <td className="px-5 py-4 font-mono text-brand-text-muted">
+                                {r.precio.toLocaleString('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })} COP
+                              </td>
+                              <td className="px-5 py-4">
+                                <span className={`font-bold font-mono text-sm ${isCritico ? 'text-brand-accent-red' : isBajo ? 'text-brand-accent-yellow' : 'text-brand-accent-green'}`}>
+                                  {r.stock} u.
+                                </span>
+                              </td>
+                              <td className="px-5 py-4">
+                                {isCritico ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border bg-brand-accent-red/10 text-brand-accent-red border-brand-accent-red/20 animate-pulse">
+                                    🚨 CRÍTICO
+                                  </span>
+                                ) : isBajo ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border bg-brand-accent-yellow/10 text-brand-accent-yellow border-brand-accent-yellow/20">
+                                    ⚠️ BAJO
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border bg-brand-accent-green/10 text-brand-accent-green border-brand-accent-green/20">
+                                    ✓ ÓPTIMO
+                                  </span>
+                                )}
+                              </td>
+                              {canEditRepuestos && (
+                                <td className="px-5 py-4 text-right flex justify-end gap-2 items-center">
+                                  {/* Entrada rápida de mercadería */}
+                                  <div className="flex items-center border border-white/10 rounded-lg overflow-hidden bg-brand-bg mr-2">
+                                    <button
+                                      title="Descontar 1 unidad"
+                                      onClick={() => handleQuickAddStock(r, -1)}
+                                      className="px-2 py-1 bg-white/5 hover:bg-brand-accent-red/10 hover:text-brand-accent-red transition-all font-mono font-bold text-[10px] border-r border-white/5 cursor-pointer"
+                                    >
+                                      -1
+                                    </button>
+                                    <button
+                                      title="Ingresar 5 unidades (Entrada mercadería)"
+                                      onClick={() => handleQuickAddStock(r, 5)}
+                                      className="px-2 py-1 bg-white/5 hover:bg-brand-accent-green/10 hover:text-brand-accent-green transition-all font-mono font-bold text-[10px] cursor-pointer"
+                                    >
+                                      +5
+                                    </button>
+                                  </div>
+                                  <button
+                                    onClick={() => handleEditRepuestoClick(r)}
+                                    className="text-brand-primary bg-brand-primary/10 border border-brand-primary/20 px-2 py-1 rounded-lg hover:bg-brand-primary/20 transition-all text-[10px] cursor-pointer"
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteRepuesto(r)}
+                                    className="text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 px-2 py-1 rounded-lg hover:bg-brand-accent-red/20 transition-all text-[10px] cursor-pointer"
+                                  >
+                                    Eliminar
+                                  </button>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ──────────────────────────────────────────────────────────────────
+              TAB 5: ÓRDENES DE TRABAJO (PUNTO 3 & 4 FASE 3)
+              ────────────────────────────────────────────────────────────────── */}
+          {activeTab === 'ordenes' && (
+            <div className="space-y-6">
+
+              {/* Formulario de Orden de Trabajo */}
+              {showOrdenForm && canEditOrdenes && (
+                <div className="glass rounded-2xl border border-white/10 p-6 animate-float-subtle">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-base font-bold text-white">
+                      {selectedOrden ? `Modificar Orden de Trabajo: #${selectedOrden.id_orden_trabajo}` : 'Registrar Nueva Orden de Trabajo'}
+                    </h3>
+                    <button 
+                      onClick={() => { setShowOrdenForm(false); setSelectedOrden(null); }} 
+                      className="text-xs text-brand-text-muted hover:text-white cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+
+                  {ordenFormError && (
+                    <div className="mb-4 text-xs text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 rounded-xl px-4 py-3">
+                      {ordenFormError}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleCreateOrUpdateOrden} className="space-y-5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {/* Selección de Motocicleta */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Motocicleta (Placa)</label>
+                        <select
+                          required
+                          disabled={!!selectedOrden}
+                          value={newOrden.id_moto}
+                          onChange={e => setNewOrden(prev => ({ ...prev, id_moto: e.target.value }))}
+                          className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all disabled:opacity-40"
+                        >
+                          <option value="">-- Seleccionar Moto --</option>
+                          {motos.map(m => (
+                            <option key={m.id} value={m.id} className="bg-brand-surface text-white">
+                              {m.placa} - {m.marca} {m.modelo}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Selección de Mecánico */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Mecánico Asignado</label>
+                        <select
+                          required
+                          value={newOrden.id_mecanico}
+                          onChange={e => setNewOrden(prev => ({ ...prev, id_mecanico: e.target.value }))}
+                          className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                        >
+                          <option value="">-- Seleccionar Mecánico --</option>
+                          {allUsers.filter(u => u.rol === 'empleado' || u.rol === 'admin').map(u => (
+                            <option key={u.id} value={u.id} className="bg-brand-surface text-white">
+                              {u.nombre} ({u.rol === 'admin' ? 'Admin' : 'Mecánico'})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Fecha de Ingreso */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Fecha de Ingreso</label>
+                        <input
+                          type="datetime-local"
+                          required
+                          value={newOrden.fecha_ingreso}
+                          onChange={e => setNewOrden(prev => ({ ...prev, fecha_ingreso: e.target.value }))}
+                          className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                      {/* Diagnóstico */}
+                      <div className="lg:col-span-2">
+                        <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Diagnóstico Técnico Inicial</label>
+                        <textarea
+                          required
+                          rows="4"
+                          placeholder="Introduce el diagnóstico detallado, síntomas reportados por el cliente y fallas encontradas..."
+                          value={newOrden.diagnostico}
+                          onChange={e => setNewOrden(prev => ({ ...prev, diagnostico: e.target.value }))}
+                          className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all resize-none"
+                        ></textarea>
+                      </div>
+
+                      {/* Estado y Mano de Obra */}
+                      <div className="space-y-4">
+                        {selectedOrden && (
+                          <div>
+                            <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Estado de la Orden</label>
+                            <select
+                              value={newOrden.estado}
+                              disabled={selectedOrden.estado === 'Entregado'}
+                              onChange={e => setNewOrden(prev => ({ ...prev, estado: e.target.value }))}
+                              className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all disabled:opacity-40"
+                            >
+                              <option value="Recepcion">Recepcion</option>
+                              <option value="Diagnostico">Diagnostico</option>
+                              <option value="Cotizacion">Cotizacion</option>
+                              <option value="Reparacion">Reparacion</option>
+                              <option value="Entregado">Entregado</option>
+                            </select>
+                          </div>
+                        )}
+                        <div>
+                          <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Valor Mano de Obra (COP)</label>
+                          <input
+                            type="number"
+                            required
+                            min="0"
+                            placeholder="Ej. 80000"
+                            value={newOrden.valor_mano_obra}
+                            onChange={e => setNewOrden(prev => ({ ...prev, valor_mano_obra: e.target.value }))}
+                            className="w-full bg-brand-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all font-mono"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* CARRITO DE REPUESTOS / CONSUMOS */}
+                    <div className="border-t border-white/5 pt-4">
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <svg className="w-4 h-4 text-brand-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                        </svg>
+                        Repuestos Consumidos (Carrito de Repuestos)
+                      </h4>
+
+                      {/* Agregar repuesto */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end mb-4 bg-white/[0.02] p-4 rounded-xl border border-white/5">
+                        <div className="sm:col-span-2">
+                          <label className="block text-[9px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Seleccionar Repuesto del Inventario</label>
+                          <select
+                            value={tempRepuesto.id_repuesto}
+                            onChange={e => setTempRepuesto(prev => ({ ...prev, id_repuesto: e.target.value }))}
+                            className="w-full bg-brand-bg border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                          >
+                            <option value="">-- Seleccionar Repuesto --</option>
+                            {repuestos.map(r => (
+                              <option key={r.id_repuesto} value={r.id_repuesto} className="bg-brand-surface text-white">
+                                {r.referencia} - {r.nombre} (Stock: {r.stock} u. | {r.precio.toLocaleString('es-CO')} COP)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex gap-2 items-center">
+                          <div className="w-24 shrink-0">
+                            <label className="block text-[9px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Cantidad</label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={tempRepuesto.cantidad}
+                              onChange={e => setTempRepuesto(prev => ({ ...prev, cantidad: e.target.value }))}
+                              className="w-full bg-brand-bg border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleAddRepuestoToOrden}
+                            className="bg-brand-primary/20 hover:bg-brand-primary text-brand-primary hover:text-white font-bold p-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer h-[38px] flex-1 shrink-0"
+                          >
+                            Agregar
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Lista de repuestos agregados */}
+                      <div className="overflow-hidden border border-white/5 rounded-xl mb-4">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-brand-surface/40 text-[9px] text-brand-text-muted uppercase tracking-wider border-b border-white/5">
+                              <th className="px-4 py-2.5">Repuesto</th>
+                              <th className="px-4 py-2.5 text-right">Precio Unitario</th>
+                              <th className="px-4 py-2.5 text-center">Cantidad</th>
+                              <th className="px-4 py-2.5 text-right">Subtotal</th>
+                              <th className="px-4 py-2.5 text-right">Acción</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/5">
+                            {newOrden.detalleOrden.length === 0 ? (
+                              <tr>
+                                <td colSpan="5" className="px-4 py-6 text-center text-brand-text-muted text-[11px]">
+                                  No se han cargado repuestos a esta orden.
+                                </td>
+                              </tr>
+                            ) : (
+                              newOrden.detalleOrden.map(d => (
+                                <tr key={d.id_repuesto} className="hover:bg-white/[0.01] transition-colors">
+                                  <td className="px-4 py-3 font-semibold text-white">
+                                    {d.nombre_Respuesto || `ID ${d.id_repuesto}`}
+                                  </td>
+                                  <td className="px-4 py-3 text-right font-mono text-brand-text-muted">
+                                    {d.precio.toLocaleString('es-CO')} COP
+                                  </td>
+                                  <td className="px-4 py-3 text-center font-mono text-white font-bold">
+                                    {d.cantidad} u.
+                                  </td>
+                                  <td className="px-4 py-3 text-right font-mono text-brand-primary font-bold">
+                                    {d.subtotal.toLocaleString('es-CO')} COP
+                                  </td>
+                                  <td className="px-4 py-3 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveRepuestoFromOrden(d.id_repuesto)}
+                                      className="text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 px-2 py-0.5 rounded hover:bg-brand-accent-red/20 transition-all text-[10px] cursor-pointer"
+                                    >
+                                      Remover
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Totalizador en vivo */}
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-brand-surface/40 p-4 rounded-xl border border-white/5">
+                        <div className="text-[11px] text-brand-text-muted">
+                          Mano de obra: <strong className="text-white font-mono">{parseFloat(newOrden.valor_mano_obra || 0).toLocaleString('es-CO')} COP</strong><br />
+                          Repuestos: <strong className="text-white font-mono">
+                            {newOrden.detalleOrden.reduce((acc, curr) => acc + curr.subtotal, 0).toLocaleString('es-CO')} COP
+                          </strong>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] text-brand-text-muted uppercase font-bold tracking-wider block">Total General Estimado</span>
+                          <h3 className="text-2xl font-black text-brand-primary font-mono mt-1">
+                            {(
+                              parseFloat(newOrden.valor_mano_obra || 0) + 
+                              newOrden.detalleOrden.reduce((acc, curr) => acc + curr.subtotal, 0)
+                            ).toLocaleString('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })} COP
+                          </h3>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Botones de Envío */}
+                    <div className="flex justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => { setShowOrdenForm(false); setSelectedOrden(null); }}
+                        className="bg-white/5 hover:bg-white/10 text-white font-semibold px-5 py-2.5 rounded-xl text-xs transition-all cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={ordenFormLoading}
+                        className="inline-flex items-center gap-2 bg-gradient-to-r from-brand-secondary to-brand-primary hover:brightness-110 disabled:brightness-75 disabled:cursor-not-allowed text-white font-semibold px-6 py-2.5 rounded-xl transition-all text-xs cursor-pointer"
+                      >
+                        {ordenFormLoading ? 'Procesando...' : (selectedOrden ? 'Guardar Cambios' : 'Registrar Orden')}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Buscador y Control de Órdenes */}
+              <div className="glass rounded-2xl border border-white/5 p-5 flex flex-col sm:flex-row sm:items-center gap-4 justify-between mb-6">
+                <div>
+                  <h3 className="text-base font-bold text-white tracking-tight">Órdenes de Trabajo & Cotizaciones</h3>
+                  <p className="text-[11px] text-brand-text-muted">
+                    {user?.rol === 'cliente' 
+                      ? 'Monitorea en tiempo real el estado técnico de tus motos y descarga cotizaciones oficiales.'
+                      : 'Registro, cotización, diagnóstico técnico y trazabilidad de servicios del taller.'}
+                  </p>
+                </div>
+                
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Buscar por placa..."
+                      value={searchOrdenPlaca}
+                      onChange={handleOrdenSearchPlaca}
+                      className="bg-brand-bg border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-all w-28 sm:w-36 font-mono"
+                    />
+                    <select
+                      value={filterOrdenEstado}
+                      onChange={e => { setFilterOrdenEstado(e.target.value); setOrdenesPage(1); }}
+                      className="bg-brand-bg border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-primary transition-all w-28 sm:w-36"
+                    >
+                      <option value="">Todos los estados</option>
+                      <option value="Recepcion">Recepción</option>
+                      <option value="Diagnostico">Diagnóstico</option>
+                      <option value="Cotizacion">Cotización</option>
+                      <option value="Reparacion">Reparación</option>
+                      <option value="Entregado">Entregado</option>
+                    </select>
+                  </div>
+
+                  {canEditOrdenes && (
+                    <button
+                      onClick={() => {
+                        setSelectedOrden(null);
+                        setNewOrden({
+                          id_moto: '',
+                          id_mecanico: '',
+                          fecha_ingreso: new Date().toISOString().substring(0, 16),
+                          diagnostico: '',
+                          estado: 'Recepcion',
+                          valor_mano_obra: 0,
+                          detalleOrden: []
+                        });
+                        setShowOrdenForm(true);
+                      }}
+                      className="bg-gradient-to-r from-brand-secondary to-brand-primary text-white font-semibold px-4 py-2 rounded-xl transition-all text-xs cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                      </svg>
+                      Nueva Orden
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Listado de Órdenes de Trabajo Separadas */}
+              <div className="space-y-6">
+                {loading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="glass rounded-2xl border border-white/5 p-6 space-y-4 animate-pulse">
+                      <div className="h-4 bg-white/5 rounded w-1/4"></div>
+                      <div className="h-10 bg-white/5 rounded w-full"></div>
+                    </div>
+                  ))
+                ) : ordenes.length === 0 ? (
+                  <div className="glass rounded-2xl border border-white/5 px-5 py-12 text-center text-brand-text-muted text-xs">
+                    No se encontraron órdenes de trabajo registradas.
+                  </div>
+                ) : (
+                  ordenes.map((o) => {
+                    const totalEstimado = Number(o.total) || 0;
+                    const isEntregado = o.estado === 'Entregado';
+                    const currentMoto = motos.find(m => m.id === o.id_moto);
+                    const matchedMecanico = allUsers.find(u => u.id === o.id_mecanico);
+
+                    // Definición de estados del Timeline
+                    const ESTADOS_TIMELINE = [
+                      { clave: 'Recepcion', label: 'Recepción', color: 'text-brand-primary border-brand-primary bg-brand-primary/10' },
+                      { clave: 'Diagnostico', label: 'Diagnóstico', color: 'text-brand-accent-yellow border-brand-accent-yellow bg-brand-accent-yellow/10' },
+                      { clave: 'Cotizacion', label: 'Cotización', color: 'text-brand-accent-purple border-brand-accent-purple bg-brand-accent-purple/10' },
+                      { clave: 'Reparacion', label: 'Reparación', color: 'text-brand-accent-blue border-brand-accent-blue bg-brand-accent-blue/10' },
+                      { clave: 'Entregado', label: 'Entregado', color: 'text-brand-accent-green border-brand-accent-green bg-brand-accent-green/10' }
+                    ];
+
+                    return (
+                      <div key={o.id_orden_trabajo} className="glass rounded-2xl border border-white/5 p-6 hover:border-white/10 transition-all duration-300 shadow-lg relative overflow-hidden space-y-5">
+                        {/* Cabecera de la Orden */}
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
+                          <div className="flex items-start gap-3">
+                            <span className="px-2.5 py-1 bg-brand-primary/10 border border-brand-primary/20 text-brand-primary font-mono font-bold rounded text-xs">
+                              Placa: {currentMoto ? currentMoto.placa : (o.placa_moto || 'Taller')}
+                            </span>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="text-sm font-bold text-white leading-none">
+                                  Orden #{o.id_orden_trabajo}
+                                </h4>
+                                <span className="text-[10px] text-brand-text-muted">·</span>
+                                <span className="text-[10px] font-mono text-brand-text-muted">
+                                  {new Date(o.fecha_ingreso).toLocaleString('es-CO')}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-brand-text-muted mt-1.5 block">
+                                Moto: {currentMoto ? `${currentMoto.marca} ${currentMoto.modelo}` : 'Vehículo no disponible'} · Mecánico: <strong className="text-white">{matchedMecanico ? matchedMecanico.nombre : (o.nombre_mecanico || 'No asignado')}</strong>
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Total e Impuestos */}
+                          <div className="text-left sm:text-right shrink-0 bg-white/[0.02] border border-white/5 rounded-xl px-4 py-2">
+                            <span className="text-[9px] text-brand-text-muted uppercase font-bold tracking-wider block">Total COP</span>
+                            <span className="text-lg font-black text-brand-primary font-mono">
+                              {totalEstimado.toLocaleString('es-CO')} COP
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Diagnóstico técnico */}
+                        <div className="bg-brand-surface/40 p-4 rounded-xl border border-white/5">
+                          <span className="text-[9px] font-bold text-brand-text-muted uppercase tracking-wider block mb-1.5">Diagnóstico / Estado Técnico</span>
+                          <p className="text-xs text-white/95 m-0 leading-relaxed font-sans">{o.diagnostico}</p>
+                        </div>
+
+                        {/* TIMELINE PREMIUM DE 5 ESTADOS */}
+                        <div className="bg-brand-surface/20 p-4 rounded-xl border border-white/5">
+                          <span className="text-[9px] font-bold text-brand-text-muted uppercase tracking-wider block mb-3.5">Progreso de la Orden</span>
+                          <div className="relative flex flex-col md:flex-row items-center justify-between gap-4 md:gap-2 px-2">
+                            {/* Línea conectora de fondo */}
+                            <div className="absolute left-1/2 md:left-0 md:top-1/2 w-0.5 md:w-full h-full md:h-0.5 bg-white/5 -translate-x-1/2 md:translate-x-0 md:-translate-y-1/2 z-0 pointer-events-none"></div>
+
+                            {ESTADOS_TIMELINE.map((item, index) => {
+                              const currentStatesIndex = ESTADOS_TIMELINE.findIndex(s => s.clave === o.estado);
+                              const isCompleted = index <= currentStatesIndex;
+                              const isActive = o.estado === item.clave;
+                              
+                              return (
+                                <button
+                                  key={item.clave}
+                                  type="button"
+                                  disabled={!canEditOrdenes || isEntregado}
+                                  onClick={() => handleUpdateOrdenEstado(o, item.clave)}
+                                  className={`relative z-10 flex flex-row md:flex-col items-center gap-3 md:gap-1.5 w-full md:w-auto bg-brand-bg md:bg-transparent p-2 md:p-0 rounded-xl md:rounded-none border md:border-none border-white/5 transition-all text-left md:text-center select-none ${
+                                    !canEditOrdenes || isEntregado 
+                                      ? 'cursor-default' 
+                                      : 'cursor-pointer group hover:scale-[1.03] md:hover:scale-100'
+                                  }`}
+                                >
+                                  {/* Indicador en el Hilo */}
+                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border-2 shrink-0 transition-all duration-300 ${
+                                    isActive 
+                                      ? `${item.color} shadow-[0_0_12px_rgba(255,255,255,0.05)] scale-110` 
+                                      : isCompleted 
+                                        ? 'bg-brand-primary/20 text-brand-primary border-brand-primary/30' 
+                                        : 'bg-brand-surface text-brand-text-muted border-white/5'
+                                  }`}>
+                                    {index + 1}
+                                  </div>
+                                  
+                                  {/* Etiqueta */}
+                                  <div>
+                                    <span className={`text-[10px] font-bold tracking-tight block transition-colors ${
+                                      isActive 
+                                        ? 'text-white' 
+                                        : isCompleted 
+                                          ? 'text-white/80' 
+                                          : 'text-brand-text-muted'
+                                    }`}>
+                                      {item.label}
+                                    </span>
+                                    <span className="text-[8px] text-brand-text-muted uppercase block font-mono">
+                                      {isActive ? '✓ Activo' : isCompleted ? 'Completado' : 'Pendiente'}
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Acciones de la Orden */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-white/5">
+                          <span className="text-[10px] text-brand-text-muted">
+                            Repuestos consumidos: <strong className="text-white font-mono">{o.detalleOrden ? `${o.detalleOrden.length} items` : 'Consulte PDF'}</strong>
+                          </span>
+                          
+                          <div className="flex items-center gap-2">
+                            {/* Descarga de PDF Cotización */}
+                            <button
+                              onClick={() => handleDownloadPdf(o)}
+                              className="inline-flex items-center gap-1.5 text-brand-primary bg-brand-primary/10 border border-brand-primary/20 px-3 py-1.5 rounded-lg hover:bg-brand-primary/20 transition-all text-[11px] cursor-pointer font-semibold"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                              Cotización PDF
+                            </button>
+
+                            {/* Editar Orden */}
+                            {canEditOrdenes && !isEntregado && (
+                              <button
+                                onClick={() => handleEditOrdenClick(o)}
+                                className="inline-flex items-center gap-1.5 text-brand-accent-blue bg-brand-accent-blue/10 border border-brand-accent-blue/20 px-3 py-1.5 rounded-lg hover:bg-brand-accent-blue/20 transition-all text-[11px] cursor-pointer font-semibold"
+                              >
+                                Editar
+                              </button>
+                            )}
+
+                            {/* Eliminar Orden */}
+                            {isAdmin && (
+                              <button
+                                onClick={() => handleDeleteOrden(o)}
+                                className="inline-flex items-center gap-1.5 text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 px-3 py-1.5 rounded-lg hover:bg-brand-accent-red/20 transition-all text-[11px] cursor-pointer font-semibold"
+                              >
+                                Eliminar
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+
+                {/* Paginación de Órdenes */}
+                {ordenesTotalPages > 1 && (
+                  <div className="glass rounded-2xl border border-white/5 p-4 flex items-center justify-between text-xs mt-4">
+                    <span className="text-brand-text-muted">
+                      Página <strong className="text-white font-mono">{ordenesPage}</strong> de <strong className="text-white font-mono">{ordenesTotalPages}</strong>
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        disabled={ordenesPage === 1}
+                        onClick={() => { setOrdenesPage(prev => Math.max(prev - 1, 1)); }}
+                        className="bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                      >
+                        Anterior
+                      </button>
+                      <button
+                        disabled={ordenesPage === ordenesTotalPages}
+                        onClick={() => { setOrdenesPage(prev => Math.min(prev + 1, ordenesTotalPages)); }}
+                        className="bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                      >
+                        Siguiente
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+        </main>
+
+        {/* ── FOOTER PREMIUM ── */}
+        <footer className="glass border-t border-white/5 py-4 px-6 md:px-10 text-center text-[10px] text-brand-text-muted flex flex-col sm:flex-row justify-between items-center gap-2 mt-auto">
+          <p className="m-0">© {new Date().getFullYear()} MotoBoss Enterprise · Colombia. Innovasoft VIII</p>
+          <p className="m-0 font-mono text-[9px] bg-white/5 px-2 py-1 rounded border border-white/5">
+            Database: <span className="text-brand-primary">PostgreSQL</span> · Backend: <span className="text-brand-primary">http://localhost:3000/api</span>
+          </p>
+        </footer>
+      </div>
+
+      {/* ── MODAL DE HISTORIAL DE SERVICIOS (RF-07) ── */}
+      {serviceHistoryMoto && (
+        <div className="fixed inset-0 bg-brand-bg/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="glass w-full max-w-2xl rounded-2xl border border-white/10 overflow-hidden shadow-2xl relative animate-float-subtle">
+            <div className="p-5 border-b border-white/5 flex items-center justify-between bg-brand-surface">
+              <div className="flex items-center gap-3">
+                <span className="px-2.5 py-1 bg-brand-primary/10 border border-brand-primary/20 text-brand-primary font-mono font-bold rounded text-xs">
+                  {serviceHistoryMoto.placa}
+                </span>
+                <div>
+                  <h3 className="text-sm font-bold text-white leading-none">{serviceHistoryMoto.marca} {serviceHistoryMoto.modelo}</h3>
+                  <span className="text-[10px] text-brand-text-muted">Propietario: {getPropietarioName(serviceHistoryMoto.id_propietario)}</span>
+                </div>
+              </div>
+              <button 
+                onClick={() => setServiceHistoryMoto(null)}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-brand-text-muted hover:text-white transition-colors cursor-pointer"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6 max-h-[450px] overflow-y-auto space-y-6">
+              <h4 className="text-xs font-bold text-brand-primary uppercase tracking-wider">Historial de Ordenes & Servicios (RF-07)</h4>
+              
+              <div className="relative border-l-2 border-white/5 ml-3 pl-6 space-y-6">
+                {getMockServiceHistory(serviceHistoryMoto.placa).map((hist) => (
+                  <div key={hist.id} className="relative">
+                    <span className="absolute -left-[31px] top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-brand-bg border-2 border-brand-primary">
+                      <span className="h-1.5 w-1.5 rounded-full bg-brand-primary animate-pulse"></span>
+                    </span>
+
+                    <div className="glass p-4 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-2">
+                        <div>
+                          <span className="text-[10px] text-brand-text-muted block">{hist.fecha}</span>
+                          <span className="text-xs font-bold text-white">{hist.tipo}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-brand-primary font-mono bg-brand-primary/10 border border-brand-primary/20 px-2 py-0.5 rounded">
+                            {hist.costo.toLocaleString('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })} COP
+                          </span>
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-brand-accent-green/20 text-brand-accent-green">
+                            {hist.estado}
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-brand-text-muted leading-relaxed">{hist.descripcion}</p>
+                      <div className="mt-3 flex items-center justify-between text-[10px] border-t border-white/5 pt-2">
+                        <span className="text-brand-text-muted">Mecánico Asignado: <strong className="text-white">{hist.mecanico}</strong></span>
+                        <span className="text-white/40">Orden #{hist.id}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-white/5 bg-brand-surface/30 flex justify-end">
+              <button 
+                onClick={() => setServiceHistoryMoto(null)}
+                className="bg-gradient-to-r from-brand-secondary to-brand-primary hover:brightness-110 text-white font-semibold px-6 py-2 rounded-xl text-xs transition-all cursor-pointer"
+              >
+                Cerrar Historial
+              </button>
+            </div>
+          </div>
         </div>
-
-      </main>
-
-      {/* ── FOOTER ── */}
-      <footer className="glass border-t border-white/5 py-3 px-6 text-center text-[10px] text-brand-text-muted z-10 flex flex-col sm:flex-row justify-between items-center gap-1">
-        <p className="m-0">© {new Date().getFullYear()} MotoBoss — Sistema de Gestión de Taller · Colombia</p>
-        <p className="m-0 font-mono">API: <span className="text-brand-primary">http://localhost:3000/api</span></p>
-      </footer>
+      )}
 
     </div>
   );
