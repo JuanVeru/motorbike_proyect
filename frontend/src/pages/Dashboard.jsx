@@ -59,6 +59,20 @@ export default function Dashboard() {
   const [showClientePassword, setShowClientePassword] = useState(false);
   const [showUsuarioPassword, setShowUsuarioPassword] = useState(false);
 
+  // Estados para cambiar contraseña en Mi Perfil
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPass, setShowCurrentPass] = useState(false);
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState('');
+
+  // Estados para Historial de Moto Real (RF-07)
+  const [motoHistoryOrders, setMotoHistoryOrders] = useState([]);
+  const [loadingMotoHistory, setLoadingMotoHistory] = useState(false);
+
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => {
@@ -162,6 +176,31 @@ export default function Dashboard() {
 
   // Modal de Historial de Servicios
   const [serviceHistoryMoto, setServiceHistoryMoto] = useState(null);
+
+  const fetchMotoHistory = useCallback(async (motoId) => {
+    setLoadingMotoHistory(true);
+    try {
+      const res = await ordenesService.getAll({ id_moto: motoId, limit: 100 });
+      if (res.success) {
+        setMotoHistoryOrders(res.data?.items ?? []);
+      } else {
+        setMotoHistoryOrders([]);
+      }
+    } catch (err) {
+      console.error('Error al cargar historial de moto', err);
+      setMotoHistoryOrders([]);
+    } finally {
+      setLoadingMotoHistory(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (serviceHistoryMoto) {
+      fetchMotoHistory(serviceHistoryMoto.id);
+    } else {
+      setMotoHistoryOrders([]);
+    }
+  }, [serviceHistoryMoto, fetchMotoHistory]);
 
   // Permisos según rol
   const isAdmin = user?.rol === 'admin';
@@ -361,8 +400,14 @@ export default function Dashboard() {
               }
             });
 
-            // Ordenar por ID de orden de forma descendente (más reciente primero)
-            merged.sort((a, b) => b.id_orden_trabajo - a.id_orden_trabajo);
+            // Ordenar por ID de orden de forma descendente (más reciente primero), y "Entregado" va al final
+            merged.sort((a, b) => {
+              const isAEntregado = a.estado === 'Entregado';
+              const isBEntregado = b.estado === 'Entregado';
+              if (isAEntregado && !isBEntregado) return 1;
+              if (!isAEntregado && isBEntregado) return -1;
+              return b.id_orden_trabajo - a.id_orden_trabajo;
+            });
 
             // Calcular servicios activos para el cliente (estado !== 'Entregado')
             const activeItems = merged.filter(o => o.estado !== 'Entregado');
@@ -399,7 +444,15 @@ export default function Dashboard() {
           const totalItems = ordenesRes.data?.totalItems ?? 0;
           const totalPages = ordenesRes.data?.totalPages ?? 1;
 
-          setOrdenes(items);
+          const sortedItems = [...items].sort((a, b) => {
+            const isAEntregado = a.estado === 'Entregado';
+            const isBEntregado = b.estado === 'Entregado';
+            if (isAEntregado && !isBEntregado) return 1;
+            if (!isAEntregado && isBEntregado) return -1;
+            return b.id_orden_trabajo - a.id_orden_trabajo;
+          });
+
+          setOrdenes(sortedItems);
           setTotalOrdenes(totalItems);
           setOrdenesTotalPages(totalPages);
         }
@@ -447,6 +500,44 @@ export default function Dashboard() {
   const handleRepuestoSearchRef = (e) => {
     setSearchRepuestoRef(e.target.value);
     setRepuestosPage(1);
+  };
+
+  const handleProfileSubmit = async (e) => {
+    e.preventDefault();
+    setProfileError('');
+
+    if (newPassword !== confirmPassword) {
+      setProfileError('La nueva contraseña y la confirmación no coinciden.');
+      return;
+    }
+
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    if (!passwordRegex.test(newPassword)) {
+      setProfileError('La nueva contraseña debe tener mínimo 8 caracteres, al menos una mayúscula, un número y un carácter especial (@$!%*?&).');
+      return;
+    }
+
+    setProfileLoading(true);
+    try {
+      const res = await usersService.changePassword({
+        currentPassword,
+        newPassword
+      });
+
+      if (res.success) {
+        showToast('Contraseña cambiada exitosamente.', 'success');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+      } else {
+        setProfileError(res.error || 'Error al cambiar la contraseña.');
+      }
+    } catch (err) {
+      console.error(err);
+      setProfileError('Error al comunicar con el servidor.');
+    } finally {
+      setProfileLoading(false);
+    }
   };
 
   // ── ACCIONES CLIENTES (CRUD) ────────────────────────────────────────────────
@@ -1225,6 +1316,20 @@ export default function Dashboard() {
             </svg>
             {isCliente ? 'Mis Órdenes' : 'Órdenes de Trabajo'}
           </button>
+
+          <button
+            onClick={() => setActiveTab('perfil')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all cursor-pointer ${
+              activeTab === 'perfil' 
+                ? 'bg-gradient-to-r from-brand-secondary/20 to-brand-primary/10 text-brand-primary border border-brand-primary/20 shadow-md shadow-brand-primary/5' 
+                : 'text-brand-text-muted hover:text-white hover:bg-white/5 border border-transparent'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            Mi Perfil
+          </button>
         </nav>
 
         <div className="p-4 border-t border-white/5 bg-white/[0.01]">
@@ -1267,6 +1372,7 @@ export default function Dashboard() {
             {activeTab === 'motos' && (isCliente ? 'Mis Motocicletas' : 'Gestión de Motocicletas')}
             {activeTab === 'repuestos' && 'Inventario de Repuestos'}
             {activeTab === 'ordenes' && (isCliente ? 'Mis Órdenes de Trabajo' : 'Órdenes de Trabajo')}
+            {activeTab === 'perfil' && 'Mi Perfil de Usuario'}
           </h1>
 
           {/* Menú móvil rápido */}
@@ -1317,6 +1423,12 @@ export default function Dashboard() {
               className={`p-1.5 rounded-lg text-[11px] font-semibold ${activeTab === 'ordenes' ? 'bg-brand-primary/20 text-brand-primary' : 'text-brand-text-muted'}`}
             >
               {isCliente ? 'Mis Órdenes' : 'Órdenes'}
+            </button>
+            <button 
+              onClick={() => setActiveTab('perfil')} 
+              className={`p-1.5 rounded-lg text-[11px] font-semibold ${activeTab === 'perfil' ? 'bg-brand-primary/20 text-brand-primary' : 'text-brand-text-muted'}`}
+            >
+              Perfil
             </button>
             <button
               onClick={logout}
@@ -1785,6 +1897,31 @@ export default function Dashboard() {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Paginación de Clientes */}
+                {clientesTotalPages > 1 && (
+                  <div className="glass rounded-2xl border border-white/5 p-4 flex items-center justify-between text-xs m-4">
+                    <span className="text-brand-text-muted">
+                      Página <strong className="text-white font-mono">{clientesPage}</strong> de <strong className="text-white font-mono">{clientesTotalPages}</strong>
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        disabled={clientesPage === 1}
+                        onClick={() => { setClientesPage(prev => Math.max(prev - 1, 1)); }}
+                        className="bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                      >
+                        Anterior
+                      </button>
+                      <button
+                        disabled={clientesPage === clientesTotalPages}
+                        onClick={() => { setClientesPage(prev => Math.min(prev + 1, clientesTotalPages)); }}
+                        className="bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                      >
+                        Siguiente
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1937,6 +2074,31 @@ export default function Dashboard() {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Paginación de Usuarios */}
+                {usuariosTotalPages > 1 && (
+                  <div className="glass rounded-2xl border border-white/5 p-4 flex items-center justify-between text-xs m-4">
+                    <span className="text-brand-text-muted">
+                      Página <strong className="text-white font-mono">{usuariosPage}</strong> de <strong className="text-white font-mono">{usuariosTotalPages}</strong>
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        disabled={usuariosPage === 1}
+                        onClick={() => { setUsuariosPage(prev => Math.max(prev - 1, 1)); }}
+                        className="bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                      >
+                        Anterior
+                      </button>
+                      <button
+                        disabled={usuariosPage === usuariosTotalPages}
+                        onClick={() => { setUsuariosPage(prev => Math.min(prev + 1, usuariosTotalPages)); }}
+                        className="bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                      >
+                        Siguiente
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2058,6 +2220,31 @@ export default function Dashboard() {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Paginación de Motos */}
+                {motosTotalPages > 1 && (
+                  <div className="glass rounded-2xl border border-white/5 p-4 flex items-center justify-between text-xs m-4">
+                    <span className="text-brand-text-muted">
+                      Página <strong className="text-white font-mono">{motosPage}</strong> de <strong className="text-white font-mono">{motosTotalPages}</strong>
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        disabled={motosPage === 1}
+                        onClick={() => { setMotosPage(prev => Math.max(prev - 1, 1)); }}
+                        className="bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                      >
+                        Anterior
+                      </button>
+                      <button
+                        disabled={motosPage === motosTotalPages}
+                        onClick={() => { setMotosPage(prev => Math.min(prev + 1, motosTotalPages)); }}
+                        className="bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                      >
+                        Siguiente
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2211,6 +2398,31 @@ export default function Dashboard() {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Paginación de Repuestos */}
+                {repuestosTotalPages > 1 && (
+                  <div className="glass rounded-2xl border border-white/5 p-4 flex items-center justify-between text-xs m-4">
+                    <span className="text-brand-text-muted">
+                      Página <strong className="text-white font-mono">{repuestosPage}</strong> de <strong className="text-white font-mono">{repuestosTotalPages}</strong>
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        disabled={repuestosPage === 1}
+                        onClick={() => { setRepuestosPage(prev => Math.max(prev - 1, 1)); }}
+                        className="bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                      >
+                        Anterior
+                      </button>
+                      <button
+                        disabled={repuestosPage === repuestosTotalPages}
+                        onClick={() => { setRepuestosPage(prev => Math.min(prev + 1, repuestosTotalPages)); }}
+                        className="bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                      >
+                        Siguiente
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2473,6 +2685,192 @@ export default function Dashboard() {
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'perfil' && (
+            <div className="space-y-6 max-w-4xl mx-auto animate-modal-in">
+              <div>
+                <h2 className="text-2xl font-bold text-white tracking-tight">Mi Perfil</h2>
+                <p className="text-xs text-brand-text-muted mt-0.5">Gestioná tus datos personales y cambiá tu contraseña de acceso.</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Tarjeta de Información General */}
+                <div className="glass p-6 rounded-2xl border border-white/5 flex flex-col items-center justify-between text-center relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl bg-brand-primary/5 transition-all"></div>
+                  
+                  <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-brand-secondary/30 to-brand-primary/20 border border-brand-primary/30 flex items-center justify-center font-black text-brand-primary text-3xl shadow-xl mt-4 mb-4 select-none animate-pulse-subtle">
+                    {user?.nombre?.substring(0,2).toUpperCase()}
+                  </div>
+
+                  <div className="space-y-1">
+                    <h3 className="text-base font-extrabold text-white">{user?.nombre}</h3>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border bg-brand-primary/10 border-brand-primary/20 text-brand-primary">
+                      {user?.rol}
+                    </span>
+                  </div>
+
+                  <div className="w-full border-t border-white/5 my-6 pt-6 space-y-3.5 text-left text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="text-brand-text-muted">Correo Electrónico:</span>
+                      <span className="text-white font-medium truncate max-w-[150px]">{user?.correo}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-brand-text-muted">Documento (Cédula):</span>
+                      <span className="text-white font-mono font-medium">{user?.cedula || 'No registrado'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-brand-text-muted">Teléfono de contacto:</span>
+                      <span className="text-white font-mono font-medium">{user?.telefono || 'No registrado'}</span>
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-brand-text-muted mb-2">Para cambiar tus datos de contacto o cédula, comunicate con un Administrador.</p>
+                </div>
+
+                {/* Formulario de Cambio de Clave */}
+                <div className="md:col-span-2 glass p-6 rounded-2xl border border-white/5 space-y-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Cambiar Contraseña</h3>
+                    <p className="text-[11px] text-brand-text-muted">Actualizá tu clave de acceso. Asegurate de cumplir con las políticas de complejidad.</p>
+                  </div>
+
+                  {profileError && (
+                    <div className="text-xs text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 rounded-xl px-4 py-3">
+                      {profileError}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleProfileSubmit} className="space-y-4">
+                    {/* Contraseña Actual */}
+                    <div className="relative">
+                      <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Contraseña Actual</label>
+                      <div className="relative">
+                        <input
+                          type={showCurrentPass ? 'text' : 'password'}
+                          required
+                          placeholder="Ingresá tu contraseña actual"
+                          value={currentPassword}
+                          onChange={e => setCurrentPassword(e.target.value)}
+                          className="w-full bg-brand-bg border border-white/10 rounded-xl pl-4 pr-10 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowCurrentPass(!showCurrentPass)}
+                          className="absolute right-3 top-3 text-brand-text-muted hover:text-white transition-colors cursor-pointer"
+                        >
+                          {showCurrentPass ? (
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+                            </svg>
+                          ) : (
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Nueva Contraseña */}
+                      <div className="relative">
+                        <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Nueva Contraseña</label>
+                        <div className="relative">
+                          <input
+                            type={showNewPass ? 'text' : 'password'}
+                            required
+                            placeholder="Mínimo 8 caracteres"
+                            value={newPassword}
+                            onChange={e => setNewPassword(e.target.value)}
+                            className="w-full bg-brand-bg border border-white/10 rounded-xl pl-4 pr-10 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewPass(!showNewPass)}
+                            className="absolute right-3 top-3 text-brand-text-muted hover:text-white transition-colors cursor-pointer"
+                          >
+                            {showNewPass ? (
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Confirmar Nueva Contraseña */}
+                      <div className="relative">
+                        <label className="block text-[10px] font-bold text-brand-text-muted mb-1.5 uppercase tracking-wider">Confirmar Contraseña</label>
+                        <div className="relative">
+                          <input
+                            type={showConfirmPass ? 'text' : 'password'}
+                            required
+                            placeholder="Repetir nueva contraseña"
+                            value={confirmPassword}
+                            onChange={e => setConfirmPassword(e.target.value)}
+                            className="w-full bg-brand-bg border border-white/10 rounded-xl pl-4 pr-10 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition-all"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowConfirmPass(!showConfirmPass)}
+                            className="absolute right-3 top-3 text-brand-text-muted hover:text-white transition-colors cursor-pointer"
+                          >
+                            {showConfirmPass ? (
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Reglas de Complejidad */}
+                    <div className="p-4 bg-brand-surface/20 rounded-xl border border-white/5 text-[10px] text-brand-text-muted space-y-1">
+                      <span className="font-bold text-white uppercase block mb-1">Políticas de Seguridad:</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${newPassword.length >= 8 ? 'bg-brand-accent-green' : 'bg-brand-accent-red'}`}></span>
+                        <span>Mínimo 8 caracteres.</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${/[A-Z]/.test(newPassword) ? 'bg-brand-accent-green' : 'bg-brand-accent-red'}`}></span>
+                        <span>Al menos una letra MAYÚSCULA.</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${/\d/.test(newPassword) ? 'bg-brand-accent-green' : 'bg-brand-accent-red'}`}></span>
+                        <span>Al menos un número (0-9).</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${/[@$!%*?&]/.test(newPassword) ? 'bg-brand-accent-green' : 'bg-brand-accent-red'}`}></span>
+                        <span>Al menos un carácter especial (@$!%*?&).</span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-2">
+                      <button
+                        type="submit"
+                        disabled={profileLoading}
+                        className="inline-flex items-center gap-2 bg-gradient-to-r from-brand-secondary to-brand-primary hover:brightness-110 disabled:brightness-75 disabled:cursor-not-allowed text-white font-semibold px-6 py-2.5 rounded-xl transition-all text-xs cursor-pointer"
+                      >
+                        {profileLoading ? 'Actualizando...' : 'Cambiar Contraseña'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
               </div>
             </div>
           )}
@@ -3060,7 +3458,7 @@ export default function Dashboard() {
                       <option value="Cotizacion">Cotización (Presupuesto)</option>
                       <option value="Aprobacion_Cotizacion">Aprobación (Espera de Cliente)</option>
                       <option value="Reparacion">Reparación (Trabajo de Mecánico)</option>
-                      <option value="Listo">Listo (Entregado al Cliente)</option>
+                      <option value="Entregado">Listo / Entregado (Trabajo Terminado)</option>
                     </select>
                   </div>
                 )}
@@ -3252,35 +3650,54 @@ export default function Dashboard() {
               <h4 className="text-xs font-bold text-brand-primary uppercase tracking-wider">Historial de Ordenes & Servicios (RF-07)</h4>
               
               <div className="relative border-l-2 border-white/5 ml-3 pl-6 space-y-6">
-                {getMockServiceHistory(serviceHistoryMoto.placa).map((hist) => (
-                  <div key={hist.id} className="relative">
-                    <span className="absolute -left-[31px] top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-brand-bg border-2 border-brand-primary">
-                      <span className="h-1.5 w-1.5 rounded-full bg-brand-primary animate-pulse"></span>
-                    </span>
-
-                    <div className="glass p-4 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
-                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-2">
-                        <div>
-                          <span className="text-[10px] text-brand-text-muted block">{hist.fecha}</span>
-                          <span className="text-xs font-bold text-white">{hist.tipo}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold text-brand-primary font-mono bg-brand-primary/10 border border-brand-primary/20 px-2 py-0.5 rounded">
-                            {hist.costo.toLocaleString('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })} COP
-                          </span>
-                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-brand-accent-green/20 text-brand-accent-green">
-                            {hist.estado}
-                          </span>
-                        </div>
-                      </div>
-                      <p className="text-[11px] text-brand-text-muted leading-relaxed">{hist.descripcion}</p>
-                      <div className="mt-3 flex items-center justify-between text-[10px] border-t border-white/5 pt-2">
-                        <span className="text-brand-text-muted">Mecánico Asignado: <strong className="text-white">{hist.mecanico}</strong></span>
-                        <span className="text-white/40">Orden #{hist.id}</span>
-                      </div>
-                    </div>
+                {loadingMotoHistory ? (
+                  <div className="text-center py-8 text-brand-text-muted text-xs">
+                    <div className="inline-block w-6 h-6 border-2 border-brand-primary border-t-transparent rounded-full animate-spin mb-2"></div>
+                    <p>Consultando historial en tiempo real...</p>
                   </div>
-                ))}
+                ) : motoHistoryOrders.length === 0 ? (
+                  <div className="text-center py-8 text-brand-text-muted text-xs italic">
+                    Esta motocicleta no tiene registros de servicios u órdenes de trabajo en el sistema.
+                  </div>
+                ) : (
+                  motoHistoryOrders.map((hist) => {
+                    const totalCosto = Number(hist.total) || parseFloat(hist.valor_mano_obra || 0) + (hist.detalleOrden ? hist.detalleOrden.reduce((acc, curr) => acc + (curr.precio * curr.cantidad), 0) : 0);
+                    const matchedMecanico = allUsers.find(u => u.id === hist.id_mecanico);
+                    return (
+                      <div key={hist.id_orden_trabajo} className="relative">
+                        <span className="absolute -left-[31px] top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-brand-bg border-2 border-brand-primary">
+                          <span className="h-1.5 w-1.5 rounded-full bg-brand-primary animate-pulse"></span>
+                        </span>
+
+                        <div className="glass p-4 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
+                          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-2">
+                            <div>
+                              <span className="text-[10px] text-brand-text-muted block">{new Date(hist.fecha_ingreso).toLocaleString('es-CO')}</span>
+                              <span className="text-xs font-bold text-white">Servicio Técnico</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-bold text-brand-primary font-mono bg-brand-primary/10 border border-brand-primary/20 px-2 py-0.5 rounded">
+                                {totalCosto.toLocaleString('es-CO')} COP
+                              </span>
+                              <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border ${
+                                hist.estado === 'Entregado'
+                                  ? 'bg-brand-accent-green/20 border-brand-accent-green/30 text-brand-accent-green'
+                                  : 'bg-brand-primary/10 border-brand-primary/20 text-brand-primary'
+                              }`}>
+                                {hist.estado}
+                              </span>
+                            </div>
+                          </div>
+                          <p className="text-[11px] text-brand-text-muted leading-relaxed">{hist.diagnostico || 'Sin diagnóstico registrado.'}</p>
+                          <div className="mt-3 flex items-center justify-between text-[10px] border-t border-white/5 pt-2">
+                            <span className="text-brand-text-muted">Mecánico Asignado: <strong className="text-white">{matchedMecanico ? matchedMecanico.nombre : (hist.nombre_mecanico || 'No asignado')}</strong></span>
+                            <span className="text-white/40">Orden #{hist.id_orden_trabajo}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
 

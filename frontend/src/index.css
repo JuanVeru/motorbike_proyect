@@ -91,3 +91,9 @@ body {
   background: rgba(23, 29, 44, 0.7);
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
 }
+
+/* Selector de fecha en modo oscuro (Calendar Icon Fix) */
+input[type="date"],
+input[type="datetime-local"] {
+  color-scheme: dark;
+}

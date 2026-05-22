@@ -27,6 +27,7 @@ class OrdenTrabajoController {
         nombre_mecanico: r.mecanico ? r.mecanico.nombre : null,
         fecha_ingreso: r.fecha_ingreso,
         fecha_entrega: r.fecha_entrega,
+        diagnostico: r.diagnostico,
         estado: r.estado,
         total: r.total
       }));
