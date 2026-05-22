@@ -4,6 +4,7 @@ import { motosService } from '../api/motos';
 import { usersService } from '../api/users';
 import { repuestosService } from '../api/repuestos';
 import { ordenesService } from '../api/ordenes';
+import { BASE_URL } from '../api/client';
 
 // ── SUB-COMPONENTES DE DISEÑO ────────────────────────────────────────────────
 
@@ -1126,7 +1127,7 @@ export default function Dashboard() {
   const handleDownloadPdf = async (orden) => {
     try {
       const token = localStorage.getItem('motoboss_token');
-      const response = await fetch(`http://localhost:3000/api/ordenes/${orden.id_orden_trabajo}/pdf`, {
+      const response = await fetch(`${BASE_URL}/ordenes/${orden.id_orden_trabajo}/pdf`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -2957,7 +2958,7 @@ export default function Dashboard() {
         <footer className="glass border-t border-white/5 py-4 px-6 md:px-10 text-center text-[10px] text-brand-text-muted flex flex-col sm:flex-row justify-between items-center gap-2 mt-auto">
           <p className="m-0">© {new Date().getFullYear()} MotoBoss Enterprise · Colombia. Innovasoft VIII</p>
           <p className="m-0 font-mono text-[9px] bg-white/5 px-2 py-1 rounded border border-white/5">
-            Database: <span className="text-brand-primary">PostgreSQL</span> · Backend: <span className="text-brand-primary">http://localhost:3000/api</span>
+            Database: <span className="text-brand-primary">PostgreSQL</span> · Backend: <span className="text-brand-primary">{BASE_URL}</span>
           </p>
         </footer>
       </div>

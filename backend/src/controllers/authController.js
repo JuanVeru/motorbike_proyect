@@ -32,7 +32,7 @@ class AuthController {
     res.json({ 
       message: 'Login exitoso',
       token,
-      user: { id: user.id, nombre: user.nombre, correo: user.correo, rol: user.rol }
+      user: { id: user.id, nombre: user.nombre, correo: user.correo, rol: user.rol, cedula: user.cedula, telefono: user.telefono }
     });
   }
 }
