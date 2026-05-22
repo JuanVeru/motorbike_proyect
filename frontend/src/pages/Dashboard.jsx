@@ -94,13 +94,15 @@ export default function Dashboard() {
   const [usuariosPage, setUsuariosPage] = useState(1);
   const [usuariosTotalPages, setUsuariosTotalPages] = useState(1);
 
-  const [searchRepuestoNombre, setSearchRepuestoNombre] = useState('');
-  const [searchRepuestoRef, setSearchRepuestoRef] = useState('');
+  const [searchRepuestoType, setSearchRepuestoType] = useState('nombre'); // 'nombre' | 'referencia'
+  const [searchRepuestoQuery, setSearchRepuestoQuery] = useState('');
   const [repuestosPage, setRepuestosPage] = useState(1);
   const [repuestosTotalPages, setRepuestosTotalPages] = useState(1);
 
   // Estados de paginación y búsqueda para Órdenes
   const [searchOrdenPlaca, setSearchOrdenPlaca] = useState('');
+  const [searchOrdenId, setSearchOrdenId] = useState('');
+  const [searchOrdenMecanico, setSearchOrdenMecanico] = useState('');
   const [filterOrdenEstado, setFilterOrdenEstado] = useState(''); // '' (Todos), 'Recepcion', 'Diagnostico', etc.
   const [ordenesPage, setOrdenesPage] = useState(1);
   const [ordenesTotalPages, setOrdenesTotalPages] = useState(1);
@@ -322,8 +324,13 @@ export default function Dashboard() {
 
         // 3. Obtener repuestos (con paginación y filtros si aplica)
         const repuestosParams = { page: repuestosPage, limit: LIMIT };
-        if (searchRepuestoNombre) repuestosParams.nombre = searchRepuestoNombre;
-        if (searchRepuestoRef)    repuestosParams.referencia = searchRepuestoRef;
+        if (searchRepuestoQuery) {
+          if (searchRepuestoType === 'nombre') {
+            repuestosParams.nombre = searchRepuestoQuery;
+          } else {
+            repuestosParams.referencia = searchRepuestoQuery;
+          }
+        }
         
         const repuestosRes = await repuestosService.getAll(repuestosParams);
         if (repuestosRes.success) {
@@ -400,6 +407,14 @@ export default function Dashboard() {
               }
             });
 
+            // Aplicar filtros adicionales del lado del cliente si están activos
+            if (searchOrdenId) {
+              merged = merged.filter(o => o.id_orden_trabajo.toString().includes(searchOrdenId));
+            }
+            if (searchOrdenMecanico) {
+              merged = merged.filter(o => o.nombre_mecanico?.toLowerCase().includes(searchOrdenMecanico.toLowerCase()) || o.id_mecanico?.toString().includes(searchOrdenMecanico));
+            }
+
             // Ordenar por ID de orden de forma descendente (más reciente primero), y "Entregado" va al final
             merged.sort((a, b) => {
               const isAEntregado = a.estado === 'Entregado';
@@ -428,15 +443,9 @@ export default function Dashboard() {
       } else {
         const ordenesParams = { page: ordenesPage, limit: LIMIT };
         if (filterOrdenEstado) ordenesParams.estado = filterOrdenEstado;
-        
-        if (searchOrdenPlaca) {
-          const matchedMotos = allMotos.filter(m => m.placa.toLowerCase().includes(searchOrdenPlaca.toLowerCase()));
-          if (matchedMotos.length > 0) {
-            ordenesParams.id_moto = matchedMotos[0].id;
-          } else {
-            ordenesParams.id_moto = -1; // forzar vacío
-          }
-        }
+        if (searchOrdenPlaca)  ordenesParams.placa_moto = searchOrdenPlaca;
+        if (searchOrdenId)     ordenesParams.id_orden_trabajo = searchOrdenId;
+        if (searchOrdenMecanico) ordenesParams.nombre_mecanico = searchOrdenMecanico;
 
         const ordenesRes = await ordenesService.getAll(ordenesParams);
         if (ordenesRes.success) {
@@ -464,7 +473,7 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [motosPage, searchPlaca, clientesPage, searchCliente, usuariosPage, searchUsuario, filterUsuarioRol, repuestosPage, searchRepuestoNombre, searchRepuestoRef, ordenesPage, searchOrdenPlaca, filterOrdenEstado, user, isAdmin, isCliente]);
+  }, [motosPage, searchPlaca, clientesPage, searchCliente, usuariosPage, searchUsuario, filterUsuarioRol, repuestosPage, searchRepuestoType, searchRepuestoQuery, ordenesPage, searchOrdenPlaca, searchOrdenId, searchOrdenMecanico, filterOrdenEstado, user, isAdmin, isCliente]);
 
   useEffect(() => {
     fetchAllData();
@@ -492,13 +501,8 @@ export default function Dashboard() {
     setUsuariosPage(1);
   };
 
-  const handleRepuestoSearchName = (e) => {
-    setSearchRepuestoNombre(e.target.value);
-    setRepuestosPage(1);
-  };
-
-  const handleRepuestoSearchRef = (e) => {
-    setSearchRepuestoRef(e.target.value);
+  const handleRepuestoSearchQuery = (e) => {
+    setSearchRepuestoQuery(e.target.value);
     setRepuestosPage(1);
   };
 
@@ -1072,6 +1076,10 @@ export default function Dashboard() {
   };
 
   const handleDeleteOrden = async (orden) => {
+    if (orden.estado === 'Entregado') {
+      showToast('No se puede eliminar una orden de trabajo que ya ha sido entregada por auditoría.', 'error');
+      return;
+    }
     if (!confirm(`¿Eliminar la orden de trabajo #${orden.id_orden_trabajo}? Se devolverán los repuestos asignados al inventario.`)) return;
     const res = await ordenesService.remove(orden.id_orden_trabajo);
     if (res.success) {
@@ -1193,6 +1201,16 @@ export default function Dashboard() {
 
   const handleOrdenSearchPlaca = (e) => {
     setSearchOrdenPlaca(e.target.value);
+    setOrdenesPage(1);
+  };
+
+  const handleOrdenSearchId = (e) => {
+    setSearchOrdenId(e.target.value);
+    setOrdenesPage(1);
+  };
+
+  const handleOrdenSearchMecanico = (e) => {
+    setSearchOrdenMecanico(e.target.value);
     setOrdenesPage(1);
   };
 
@@ -2267,20 +2285,25 @@ export default function Dashboard() {
                   </div>
                   
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 bg-brand-bg border border-white/10 rounded-xl px-3 py-2 items-center">
+                      <select
+                        value={searchRepuestoType}
+                        onChange={e => {
+                          setSearchRepuestoType(e.target.value);
+                          setRepuestosPage(1);
+                        }}
+                        className="bg-transparent text-xs text-brand-primary border-none outline-none cursor-pointer font-semibold pr-2 focus:ring-0 focus:outline-none"
+                      >
+                        <option value="nombre" className="bg-brand-bg text-white">Nombre</option>
+                        <option value="referencia" className="bg-brand-bg text-white">Referencia</option>
+                      </select>
+                      <div className="w-px h-4 bg-white/10"></div>
                       <input
                         type="text"
-                        placeholder="Filtrar Referencia..."
-                        value={searchRepuestoRef}
-                        onChange={handleRepuestoSearchRef}
-                        className="bg-brand-bg border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-all w-28 sm:w-36 font-mono"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Filtrar Nombre..."
-                        value={searchRepuestoNombre}
-                        onChange={handleRepuestoSearchName}
-                        className="bg-brand-bg border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-all w-28 sm:w-36"
+                        placeholder={`Buscar por ${searchRepuestoType === 'nombre' ? 'nombre' : 'referencia'}...`}
+                        value={searchRepuestoQuery}
+                        onChange={handleRepuestoSearchQuery}
+                        className="bg-transparent border-none text-xs text-white placeholder-white/30 focus:outline-none w-28 sm:w-36 font-mono"
                       />
                     </div>
 
@@ -2360,32 +2383,15 @@ export default function Dashboard() {
                               </td>
                               {canEditRepuestos && (
                                 <td className="px-5 py-4 text-right flex justify-end gap-2 items-center">
-                                  {/* Entrada rápida de mercadería */}
-                                  <div className="flex items-center border border-white/10 rounded-lg overflow-hidden bg-brand-bg mr-2">
-                                    <button
-                                      title="Descontar 1 unidad"
-                                      onClick={() => handleQuickAddStock(r, -1)}
-                                      className="px-2 py-1 bg-white/5 hover:bg-brand-accent-red/10 hover:text-brand-accent-red transition-all font-mono font-bold text-[10px] border-r border-white/5 cursor-pointer"
-                                    >
-                                      -1
-                                    </button>
-                                    <button
-                                      title="Ingresar 5 unidades (Entrada mercadería)"
-                                      onClick={() => handleQuickAddStock(r, 5)}
-                                      className="px-2 py-1 bg-white/5 hover:bg-brand-accent-green/10 hover:text-brand-accent-green transition-all font-mono font-bold text-[10px] cursor-pointer"
-                                    >
-                                      +5
-                                    </button>
-                                  </div>
                                   <button
                                     onClick={() => handleEditRepuestoClick(r)}
-                                    className="text-brand-primary bg-brand-primary/10 border border-brand-primary/20 px-2 py-1 rounded-lg hover:bg-brand-primary/20 transition-all text-[10px] cursor-pointer"
+                                    className="text-brand-primary bg-brand-primary/10 border border-brand-primary/20 px-2 py-1 rounded-lg hover:bg-brand-primary/20 transition-all text-[10px] cursor-pointer font-bold uppercase tracking-wider"
                                   >
                                     Editar
                                   </button>
                                   <button
                                     onClick={() => handleDeleteRepuesto(r)}
-                                    className="text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 px-2 py-1 rounded-lg hover:bg-brand-accent-red/20 transition-all text-[10px] cursor-pointer"
+                                    className="text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 px-2 py-1 rounded-lg hover:bg-brand-accent-red/20 transition-all text-[10px] cursor-pointer font-bold uppercase tracking-wider"
                                   >
                                     Eliminar
                                   </button>
@@ -2445,18 +2451,32 @@ export default function Dashboard() {
                 </div>
                 
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <input
                       type="text"
-                      placeholder="Buscar por placa..."
+                      placeholder="N° Orden..."
+                      value={searchOrdenId}
+                      onChange={handleOrdenSearchId}
+                      className="bg-brand-bg border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-all w-20 font-mono"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Placa..."
                       value={searchOrdenPlaca}
                       onChange={handleOrdenSearchPlaca}
-                      className="bg-brand-bg border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-all w-28 sm:w-36 font-mono"
+                      className="bg-brand-bg border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-all w-24 font-mono"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Mecánico..."
+                      value={searchOrdenMecanico}
+                      onChange={handleOrdenSearchMecanico}
+                      className="bg-brand-bg border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-brand-primary transition-all w-28 sm:w-32"
                     />
                     <select
                       value={filterOrdenEstado}
                       onChange={e => { setFilterOrdenEstado(e.target.value); setOrdenesPage(1); }}
-                      className="bg-brand-bg border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-primary transition-all w-28 sm:w-36"
+                      className="bg-brand-bg border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-primary transition-all w-28 sm:w-32"
                     >
                       <option value="">Todos los estados</option>
                       <option value="Recepcion">Recepción</option>
@@ -2524,132 +2544,188 @@ export default function Dashboard() {
 
                     return (
                       <div key={o.id_orden_trabajo} className="glass rounded-2xl border border-white/5 p-6 hover:border-white/10 transition-all duration-300 shadow-lg relative overflow-hidden space-y-5">
-                        {/* Cabecera de la Orden */}
-                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
-                          <div className="flex items-start gap-3">
-                            <span className="px-2.5 py-1 bg-brand-primary/10 border border-brand-primary/20 text-brand-primary font-mono font-bold rounded text-xs">
-                              Placa: {currentMoto ? currentMoto.placa : (o.placa_moto || 'Taller')}
-                            </span>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <h4 className="text-sm font-bold text-white leading-none">
-                                  Orden #{o.id_orden_trabajo}
-                                </h4>
-                                <span className="text-[10px] text-brand-text-muted">·</span>
-                                <span className="text-[10px] font-mono text-brand-text-muted">
-                                  {new Date(o.fecha_ingreso).toLocaleString('es-CO')}
-                                </span>
+                        
+                        {/* Cabecera Premium de la Orden con Efecto de Resplandor en el Fondo */}
+                        <div className="absolute top-0 right-0 w-32 h-32 rounded-full bg-brand-primary/5 blur-3xl pointer-events-none"></div>
+                        
+                        {/* Grid de 2 Columnas Principal */}
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                          
+                          {/* Columna Izquierda (8/12) - Info, Diagnóstico y Progreso */}
+                          <div className="lg:col-span-8 space-y-5">
+                            
+                            {/* Fila de Datos Básicos de la Moto y Orden */}
+                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                              <div className="flex items-start gap-3">
+                                <div className="flex flex-col gap-1.5">
+                                  <span className="self-start px-2.5 py-1 bg-brand-primary/10 border border-brand-primary/20 text-brand-primary font-mono font-black rounded-lg text-xs tracking-wider shadow-sm">
+                                    PLACA: {currentMoto ? currentMoto.placa : (o.placa_moto || 'TALLER')}
+                                  </span>
+                                  <span className="text-[10px] text-brand-text-muted mt-1 block">
+                                    {new Date(o.fecha_ingreso).toLocaleString('es-CO')}
+                                  </span>
+                                </div>
+                                <div>
+                                  <h4 className="text-base font-black text-white tracking-tight flex items-center gap-2">
+                                    Orden de Trabajo #{o.id_orden_trabajo}
+                                  </h4>
+                                  <p className="text-xs text-brand-text-muted mt-1">
+                                    Moto: <span className="text-white font-semibold">{currentMoto ? `${currentMoto.marca} ${currentMoto.modelo}` : (o.marca_modelo || 'Vehículo registrado')}</span>
+                                    <span className="mx-2 text-white/10">|</span>
+                                    Mecánico: <span className="text-white font-semibold">{matchedMecanico ? matchedMecanico.nombre : (o.nombre_mecanico || 'No asignado')}</span>
+                                  </p>
+                                </div>
                               </div>
-                              <span className="text-[10px] text-brand-text-muted mt-1.5 block">
-                                Moto: {currentMoto ? `${currentMoto.marca} ${currentMoto.modelo}` : 'Vehículo no disponible'} · Mecánico: <strong className="text-white">{matchedMecanico ? matchedMecanico.nombre : (o.nombre_mecanico || 'No asignado')}</strong>
-                              </span>
                             </div>
-                          </div>
 
-                          {/* Total e Impuestos */}
-                          <div className="text-left sm:text-right shrink-0 bg-white/[0.02] border border-white/5 rounded-xl px-4 py-2">
-                            <span className="text-[9px] text-brand-text-muted uppercase font-bold tracking-wider block">Total COP</span>
-                            <span className="text-lg font-black text-brand-primary font-mono">
-                              {totalEstimado.toLocaleString('es-CO')} COP
-                            </span>
-                          </div>
-                        </div>
+                            {/* Contenedor de Diagnóstico Técnico */}
+                            <div className="bg-white/[0.02] p-4.5 rounded-xl border border-white/5 relative group hover:border-white/10 transition-colors">
+                              <span className="text-[9px] font-bold text-brand-primary uppercase tracking-wider block mb-2 font-mono">Diagnóstico & Tareas Realizadas</span>
+                              <p className="text-xs text-white/90 leading-relaxed m-0 font-medium">
+                                {o.diagnostico}
+                              </p>
+                            </div>
 
-                        {/* Diagnóstico técnico */}
-                        <div className="bg-brand-surface/40 p-4 rounded-xl border border-white/5">
-                          <span className="text-[9px] font-bold text-brand-text-muted uppercase tracking-wider block mb-1.5">Diagnóstico / Estado Técnico</span>
-                          <p className="text-xs text-white/95 m-0 leading-relaxed font-sans">{o.diagnostico}</p>
-                        </div>
+                            {/* TIMELINE PREMIUM DE 5 ESTADOS */}
+                            <div className="bg-white/[0.01] p-4.5 rounded-xl border border-white/5">
+                              <span className="text-[9px] font-bold text-brand-text-muted uppercase tracking-wider block mb-4 font-mono">Fase del Servicio (Progreso en Vivo)</span>
+                              <div className="relative flex flex-col md:flex-row items-center justify-between gap-4 md:gap-2 px-1">
+                                {/* Línea conectora de fondo */}
+                                <div className="absolute left-1/2 md:left-0 md:top-1/2 w-0.5 md:w-full h-full md:h-0.5 bg-white/5 -translate-x-1/2 md:translate-x-0 md:-translate-y-1/2 z-0 pointer-events-none"></div>
 
-                        {/* TIMELINE PREMIUM DE 5 ESTADOS */}
-                        <div className="bg-brand-surface/20 p-4 rounded-xl border border-white/5">
-                          <span className="text-[9px] font-bold text-brand-text-muted uppercase tracking-wider block mb-3.5">Progreso de la Orden</span>
-                          <div className="relative flex flex-col md:flex-row items-center justify-between gap-4 md:gap-2 px-2">
-                            {/* Línea conectora de fondo */}
-                            <div className="absolute left-1/2 md:left-0 md:top-1/2 w-0.5 md:w-full h-full md:h-0.5 bg-white/5 -translate-x-1/2 md:translate-x-0 md:-translate-y-1/2 z-0 pointer-events-none"></div>
-
-                            {ESTADOS_TIMELINE.map((item, index) => {
-                              const currentStatesIndex = ESTADOS_TIMELINE.findIndex(s => s.clave === o.estado);
-                              const isCompleted = index <= currentStatesIndex;
-                              const isActive = o.estado === item.clave;
-                              
-                              return (
-                                <button
-                                  key={item.clave}
-                                  type="button"
-                                  disabled={!canEditOrdenes || isEntregado}
-                                  onClick={() => handleUpdateOrdenEstado(o, item.clave)}
-                                  className={`relative z-10 flex flex-row md:flex-col items-center gap-3 md:gap-1.5 w-full md:w-auto bg-brand-bg md:bg-transparent p-2 md:p-0 rounded-xl md:rounded-none border md:border-none border-white/5 transition-all text-left md:text-center select-none ${
-                                    !canEditOrdenes || isEntregado 
-                                      ? 'cursor-default' 
-                                      : 'cursor-pointer group hover:scale-[1.03] md:hover:scale-100'
-                                  }`}
-                                >
-                                  {/* Indicador en el Hilo */}
-                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border-2 shrink-0 transition-all duration-300 ${
-                                    isActive 
-                                      ? `${item.color} shadow-[0_0_12px_rgba(255,255,255,0.05)] scale-110` 
-                                      : isCompleted 
-                                        ? 'bg-brand-primary/20 text-brand-primary border-brand-primary/30' 
-                                        : 'bg-brand-surface text-brand-text-muted border-white/5'
-                                  }`}>
-                                    {index + 1}
-                                  </div>
+                                {ESTADOS_TIMELINE.map((item, index) => {
+                                  const currentStatesIndex = ESTADOS_TIMELINE.findIndex(s => s.clave === o.estado);
+                                  const isCompleted = index <= currentStatesIndex;
+                                  const isActive = o.estado === item.clave;
                                   
-                                  {/* Etiqueta */}
-                                  <div>
-                                    <span className={`text-[10px] font-bold tracking-tight block transition-colors ${
-                                      isActive 
-                                        ? 'text-white' 
-                                        : isCompleted 
-                                          ? 'text-white/80' 
-                                          : 'text-brand-text-muted'
-                                    }`}>
-                                      {item.label}
-                                    </span>
-                                    <span className="text-[8px] text-brand-text-muted uppercase block font-mono">
-                                      {isActive ? '✓ Activo' : isCompleted ? 'Completado' : 'Pendiente'}
-                                    </span>
+                                  return (
+                                    <button
+                                      key={item.clave}
+                                      type="button"
+                                      disabled={!canEditOrdenes || isEntregado}
+                                      onClick={() => handleUpdateOrdenEstado(o, item.clave)}
+                                      className={`relative z-10 flex flex-row md:flex-col items-center gap-3 md:gap-2 w-full md:w-auto bg-brand-bg/80 md:bg-transparent p-2.5 md:p-0 rounded-xl md:rounded-none border md:border-none border-white/5 transition-all text-left md:text-center select-none ${
+                                        !canEditOrdenes || isEntregado 
+                                          ? 'cursor-default' 
+                                          : 'cursor-pointer group hover:scale-[1.02] md:hover:scale-100'
+                                      }`}
+                                    >
+                                      {/* Indicador en el Hilo */}
+                                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border-2 shrink-0 transition-all duration-300 ${
+                                        isActive 
+                                          ? `${item.color} shadow-[0_0_15px_rgba(255,255,255,0.08)] scale-110` 
+                                          : isCompleted 
+                                            ? 'bg-brand-primary/20 text-brand-primary border-brand-primary/30' 
+                                            : 'bg-brand-surface text-brand-text-muted border-white/5'
+                                      }`}>
+                                        {index + 1}
+                                      </div>
+                                      
+                                      {/* Etiqueta */}
+                                      <div>
+                                        <span className={`text-[10px] font-extrabold tracking-tight block transition-colors ${
+                                          isActive 
+                                            ? 'text-brand-primary' 
+                                            : isCompleted 
+                                              ? 'text-white/80' 
+                                              : 'text-brand-text-muted'
+                                        }`}>
+                                          {item.label}
+                                        </span>
+                                        <span className="text-[8px] text-brand-text-muted uppercase block font-mono">
+                                          {isActive ? '✓ Activo' : isCompleted ? 'Listo' : 'Pendiente'}
+                                        </span>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                          </div>
+
+                          {/* Columna Derecha (4/12) - Scoreboard y Repuestos Consumidos */}
+                          <div className="lg:col-span-4 flex flex-col justify-between space-y-4">
+                            
+                            {/* Scoreboard COP Financial Block */}
+                            <div className="bg-brand-primary/5 border border-brand-primary/10 rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between h-[105px]">
+                              <div className="absolute top-0 right-0 w-16 h-16 rounded-full bg-brand-primary/10 blur-xl pointer-events-none"></div>
+                              <span className="text-[9px] text-brand-primary uppercase font-black tracking-widest block font-mono">Total Liquidación</span>
+                              <div>
+                                <h3 className="text-2xl font-black text-white tracking-tight leading-none font-mono">
+                                  {totalEstimado.toLocaleString('es-CO')}
+                                </h3>
+                                <span className="text-[10px] text-brand-text-muted font-bold font-mono">COP · Mano de Obra + Repuestos</span>
+                              </div>
+                            </div>
+
+                            {/* Desglose de Insumos & Repuestos Consumidos */}
+                            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4.5 flex-1 flex flex-col min-h-[160px] max-h-[180px]">
+                              <span className="text-[9px] font-bold text-brand-text-muted uppercase tracking-wider block mb-2 font-mono">Repuestos Utilizados</span>
+                              <div className="overflow-y-auto flex-1 pr-1 space-y-2 custom-scrollbar">
+                                {o.detalleOrden && o.detalleOrden.length > 0 ? (
+                                  o.detalleOrden.map((d, dIdx) => {
+                                    const precioUnitario = d.cantidad > 0 ? (d.subtotal / d.cantidad) : 0;
+                                    return (
+                                      <div key={d.id_detallerOrden || dIdx} className="flex justify-between items-center bg-white/[0.01] hover:bg-white/[0.03] border border-white/5 rounded-lg p-2 transition-colors">
+                                        <div className="min-w-0 flex-1 pr-2">
+                                          <p className="text-[11px] font-bold text-white truncate m-0">
+                                            {d.nombre_Respuesto || `Insumo #${d.id_repuesto}`}
+                                          </p>
+                                          <span className="text-[9px] text-brand-text-muted font-mono block">
+                                            {d.cantidad} ud x {precioUnitario.toLocaleString('es-CO')} COP
+                                          </span>
+                                        </div>
+                                        <span className="text-[11px] font-bold font-mono text-brand-primary shrink-0">
+                                          +{d.subtotal.toLocaleString('es-CO')}
+                                        </span>
+                                      </div>
+                                    );
+                                  })
+                                ) : (
+                                  <div className="flex flex-col items-center justify-center h-full text-center py-4">
+                                    <span className="text-[10px] text-brand-text-muted italic">Sin repuestos asignados</span>
                                   </div>
-                                </button>
-                              );
-                            })}
+                                )}
+                              </div>
+                            </div>
+
                           </div>
                         </div>
 
-                        {/* Acciones de la Orden */}
-                        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-white/5">
+                        {/* Acciones de la Orden en el pie del card */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-white/5 z-10 relative">
                           <span className="text-[10px] text-brand-text-muted">
-                            Repuestos consumidos: <strong className="text-white font-mono">{o.detalleOrden ? `${o.detalleOrden.length} items` : 'Consulte PDF'}</strong>
+                            Servicio administrado bajo protocolos de seguridad e inventario MotoBoss.
                           </span>
                           
                           <div className="flex items-center gap-2">
                             {/* Descarga de PDF Cotización */}
                             <button
                               onClick={() => handleDownloadPdf(o)}
-                              className="inline-flex items-center gap-1.5 text-brand-primary bg-brand-primary/10 border border-brand-primary/20 px-3 py-1.5 rounded-lg hover:bg-brand-primary/20 transition-all text-[11px] cursor-pointer font-semibold"
+                              className="inline-flex items-center gap-1.5 text-brand-primary bg-brand-primary/10 border border-brand-primary/20 px-3.5 py-1.5 rounded-xl hover:bg-brand-primary/20 transition-all text-[11px] cursor-pointer font-bold uppercase tracking-wider"
                             >
                               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                               </svg>
-                              Cotización PDF
+                              Exportar PDF
                             </button>
 
                             {/* Editar Orden */}
                             {canEditOrdenes && !isEntregado && (
                               <button
                                 onClick={() => handleEditOrdenClick(o)}
-                                className="inline-flex items-center gap-1.5 text-brand-accent-blue bg-brand-accent-blue/10 border border-brand-accent-blue/20 px-3 py-1.5 rounded-lg hover:bg-brand-accent-blue/20 transition-all text-[11px] cursor-pointer font-semibold"
+                                className="inline-flex items-center gap-1.5 text-brand-accent-blue bg-brand-accent-blue/10 border border-brand-accent-blue/20 px-3.5 py-1.5 rounded-xl hover:bg-brand-accent-blue/20 transition-all text-[11px] cursor-pointer font-bold uppercase tracking-wider"
                               >
                                 Editar
                               </button>
                             )}
 
                             {/* Eliminar Orden */}
-                            {isAdmin && (
+                            {isAdmin && !isEntregado && (
                               <button
                                 onClick={() => handleDeleteOrden(o)}
-                                className="inline-flex items-center gap-1.5 text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 px-3 py-1.5 rounded-lg hover:bg-brand-accent-red/20 transition-all text-[11px] cursor-pointer font-semibold"
+                                className="inline-flex items-center gap-1.5 text-brand-accent-red bg-brand-accent-red/10 border border-brand-accent-red/20 px-3.5 py-1.5 rounded-xl hover:bg-brand-accent-red/20 transition-all text-[11px] cursor-pointer font-bold uppercase tracking-wider"
                               >
                                 Eliminar
                               </button>

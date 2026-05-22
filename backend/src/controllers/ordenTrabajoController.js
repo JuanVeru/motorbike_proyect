@@ -8,13 +8,16 @@ const { getPaginationParams, buildPaginatedResponse } = require('../utils/pagina
 class OrdenTrabajoController {
   async getAll(req, res) {
     try {
-      const { id_moto, id_mecanico, estado } = req.query;
+      const { id_moto, id_mecanico, estado, id_orden_trabajo, placa_moto, nombre_mecanico } = req.query;
       const { limit, offset, page } = getPaginationParams(req.query);
 
       const { rows, count } = await ordenTrabajoRepository.findAll({
         id_moto,
         id_mecanico,
         estado,
+        id_orden_trabajo,
+        placa_moto,
+        nombre_mecanico,
         limit,
         offset
       });
@@ -23,13 +26,22 @@ class OrdenTrabajoController {
         id_orden_trabajo: r.id_orden_trabajo,
         id_moto: r.id_moto,
         placa_moto: r.moto ? r.moto.placa : null,
+        marca_modelo: r.moto ? `${r.moto.marca} ${r.moto.modelo}` : null,
         id_mecanico: r.id_mecanico,
         nombre_mecanico: r.mecanico ? r.mecanico.nombre : null,
         fecha_ingreso: r.fecha_ingreso,
         fecha_entrega: r.fecha_entrega,
         diagnostico: r.diagnostico,
         estado: r.estado,
-        total: r.total
+        total: r.total,
+        detalleOrden: (r.detalles || []).map(d => ({
+          id_detallerOrden: d.id_detalle_orden,
+          id_orden: d.id_orden_trabajo,
+          id_repuesto: d.id_repuesto,
+          nombre_Respuesto: d.repuesto ? d.repuesto.nombre : null,
+          cantidad: d.cantidad,
+          subtotal: d.subtotal
+        }))
       }));
 
       const paginatedResponse = buildPaginatedResponse(formattedRows, count, page, limit);
@@ -386,6 +398,10 @@ class OrdenTrabajoController {
       const order = await ordenTrabajoRepository.findById(id);
       if (!order) {
         return res.status(404).json({ error: 'Orden de trabajo no encontrada' });
+      }
+
+      if (order.estado === 'Entregado') {
+        return res.status(400).json({ error: 'No se puede eliminar una orden de trabajo que ya ha sido entregada.' });
       }
 
       // Devolver stock de repuestos al inventario

@@ -12,15 +12,38 @@ class OrdenTrabajoRepository {
     if (filters.estado !== undefined && filters.estado !== null && filters.estado !== '') {
       where.estado = filters.estado;
     }
+    if (filters.id_orden_trabajo !== undefined && filters.id_orden_trabajo !== null && filters.id_orden_trabajo !== '') {
+      where.id_orden_trabajo = filters.id_orden_trabajo;
+    }
 
     const options = {
       where,
       include: [
-        { model: Moto, as: 'moto', attributes: ['placa'] },
-        { model: User, as: 'mecanico', attributes: ['nombre'] }
+        { model: Moto, as: 'moto', attributes: ['placa', 'marca', 'modelo'] },
+        { model: User, as: 'mecanico', attributes: ['nombre'] },
+        {
+          model: DetalleOrden,
+          as: 'detalles',
+          attributes: ['id_detalle_orden', 'id_repuesto', 'cantidad', 'subtotal'],
+          include: [
+            { model: Repuesto, as: 'repuesto', attributes: ['nombre', 'precio'] }
+          ]
+        }
       ],
       order: [['id_orden_trabajo', 'ASC']]
     };
+
+    if (filters.placa_moto !== undefined && filters.placa_moto !== null && filters.placa_moto !== '') {
+      options.include[0].where = {
+        placa: { [require('sequelize').Op.iLike]: `%${filters.placa_moto}%` }
+      };
+    }
+
+    if (filters.nombre_mecanico !== undefined && filters.nombre_mecanico !== null && filters.nombre_mecanico !== '') {
+      options.include[1].where = {
+        nombre: { [require('sequelize').Op.iLike]: `%${filters.nombre_mecanico}%` }
+      };
+    }
 
     if (filters.limit !== undefined && filters.limit !== null) {
       options.limit = filters.limit;

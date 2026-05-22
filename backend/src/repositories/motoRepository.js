@@ -6,7 +6,7 @@ class MotoRepository {
   async findAll(filters = {}) {
     const where = {};
     if (filters.placa !== undefined && filters.placa !== null && filters.placa !== '') {
-      where.placa = filters.placa;
+      where.placa = { [require('sequelize').Op.iLike]: `%${filters.placa}%` };
     }
     if (filters.id_propietario !== undefined && filters.id_propietario !== null && filters.id_propietario !== '') {
       where.id_propietario = filters.id_propietario;
